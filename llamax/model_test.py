@@ -73,16 +73,7 @@ class TestModelEquivalence(unittest.TestCase):
                                                       hidden_dim=4*self.config.dim,
                                                       multiple_of=self.config.multiple_of,
                                                       ffn_dim_multiplier=self.config.ffn_dim_multiplier).to(torch.float64)
-        #flax_params = flax_ffn.init(jax.random.PRNGKey(0), inputs)
         params = model.feedforward_params_from_torch(torch_ffn)
-        #flax_params_shapes = jax.tree.map(lambda x: x.shape, flax_params)
-        params_shapes = jax.tree.map(lambda x: x.shape, params)
-        #print(f'{flax_params_shapes=}, {params_shapes=}')
-        #jax.tree.map(lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
-        #             flax_params, params)
-        #jax_w3_params = params_shapes['params']['w3']['kernel']
-        #torch_params = torch_ffn.w3.weight.detach().numpy()
-        #np.testing.assert_array_almost_equal(jax_w3_params, torch_params.T)
         flax_module = lambda x: jax.jit(flax_ffn.apply)(params, x)
         assert_modules_output_same_code(
             inputs, flax_module, torch_ffn)
