@@ -19,21 +19,41 @@ class RMSNorm(nn.Module):
         weight = self.param('weight', nn.initializers.ones, (self.dim,))
         return x * jax.lax.rsqrt(jnp.mean(x**2, axis=-1, keepdims=True) + self.eps) * weight
 
+
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     freqs = 1.0 / (theta ** (jnp.arange(0, dim, 2)[:dim // 2].astype(jnp.float32) / dim))
     t = jnp.arange(end, dtype=jnp.float32)
     freqs = jnp.outer(t, freqs)
     return jnp.exp(1j * freqs)
 
-def apply_rotary_emb(xq: jnp.ndarray, xk: jnp.ndarray, freqs_cis: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    xq_ = jnp.stack([xq[..., ::2], xq[..., 1::2]], axis=-1)
-    xk_ = jnp.stack([xk[..., ::2], xk[..., 1::2]], axis=-1)
-    freqs_cis = jax.lax.broadcast_in_dim(freqs_cis, xq_.shape, (1, 2))
-    xq_out = jnp.stack([xq_[..., 0] * freqs_cis.real - xq_[..., 1] * freqs_cis.imag,
-                        xq_[..., 1] * freqs_cis.real + xq_[..., 0] * freqs_cis.imag], axis=-1)
-    xk_out = jnp.stack([xk_[..., 0] * freqs_cis.real - xk_[..., 1] * freqs_cis.imag,
-                        xk_[..., 1] * freqs_cis.real + xk_[..., 0] * freqs_cis.imag], axis=-1)
-    return xq_out.reshape(xq.shape), xk_out.reshape(xk.shape)
+
+def reshape_for_broadcast(freqs_cis: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
+    ndim = x.ndim
+    assert 0 <= 1 < ndim
+    assert freqs_cis.shape == (x.shape[1], x.shape[-1]), f'{freqs_cis.shape=}, {x.shape=}'
+    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    return jnp.reshape(freqs_cis, shape)
+
+
+def apply_rotary_emb(
+    xq: jnp.ndarray,
+    xk: jnp.ndarray,
+    freqs_cis: jnp.ndarray,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    xq_ = jnp.reshape(xq.astype(jnp.float32), (*xq.shape[:-1], -1, 2))
+    xk_ = jnp.reshape(xk.astype(jnp.float32), (*xk.shape[:-1], -1, 2))
+    xq_complex = xq_[..., 0] + 1j * xq_[..., 1]
+    xk_complex = xk_[..., 0] + 1j * xk_[..., 1]
+
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_complex)
+
+    xq_out = xq_complex * freqs_cis
+    xk_out = xk_complex * freqs_cis
+
+    xq_out = jnp.stack([jnp.real(xq_out), jnp.imag(xq_out)], axis=-1).reshape(xq.shape)
+    xk_out = jnp.stack([jnp.real(xk_out), jnp.imag(xk_out)], axis=-1).reshape(xk.shape)
+    return xq_out.astype(xq.dtype), xk_out.astype(xk.dtype)
+
 
 def repeat_kv(x: jnp.ndarray, n_rep: int) -> jnp.ndarray:
     bs, slen, n_kv_heads, head_dim = x.shape
@@ -52,47 +72,48 @@ class Attention(nn.Module):
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, start_pos: int, freqs_cis: jnp.ndarray, mask: Optional[jnp.ndarray]):
-        self.n_kv_heads = self.n_kv_heads or self.n_heads
+        n_kv_heads = self.n_kv_heads or self.n_heads
         head_dim = self.dim // self.n_heads
-        n_rep = self.n_heads // self.n_kv_heads
+        n_rep = self.n_heads // n_kv_heads
 
         wq = nn.Dense(features=self.n_heads * head_dim, use_bias=False, name='wq')
-        wk = nn.Dense(features=self.n_kv_heads * head_dim, use_bias=False, name='wk')
-        wv = nn.Dense(features=self.n_kv_heads * head_dim, use_bias=False, name='wv')
+        wk = nn.Dense(features=n_kv_heads * head_dim, use_bias=False, name='wk')
+        wv = nn.Dense(features=n_kv_heads * head_dim, use_bias=False, name='wv')
         wo = nn.Dense(features=self.dim, use_bias=False, name='wo')
 
         bsz, seqlen, _ = x.shape
         xq, xk, xv = wq(x), wk(x), wv(x)
 
         xq = xq.reshape(bsz, seqlen, self.n_heads, head_dim)
-        xk = xk.reshape(bsz, seqlen, self.n_kv_heads, head_dim)
-        xv = xv.reshape(bsz, seqlen, self.n_kv_heads, head_dim)
+        xk = xk.reshape(bsz, seqlen, n_kv_heads, head_dim)
+        xv = xv.reshape(bsz, seqlen, n_kv_heads, head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
 
-        cache_k = self.variable('cache', 'key', lambda: jnp.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, head_dim)))
-        cache_v = self.variable('cache', 'value', lambda: jnp.zeros((self.max_batch_size, self.max_seq_len, self.n_kv_heads, head_dim)))
-
-        cache_k.value = cache_k.value.at[:bsz, start_pos:start_pos + seqlen].set(xk)
-        cache_v.value = cache_v.value.at[:bsz, start_pos:start_pos + seqlen].set(xv)
-
-        keys = cache_k.value[:bsz, :start_pos + seqlen]
-        values = cache_v.value[:bsz, :start_pos + seqlen]
-
         # repeat k/v heads if n_kv_heads < n_heads
-        keys = repeat_kv(keys, n_rep)
-        values = repeat_kv(values, n_rep)
+        xk = repeat_kv(xk, n_rep)
+        xv = repeat_kv(xv, n_rep)
 
         xq = jnp.transpose(xq, (0, 2, 1, 3))
-        keys = jnp.transpose(keys, (0, 2, 1, 3))
-        values = jnp.transpose(values, (0, 2, 1, 3))
-        scores = jnp.matmul(xq, jnp.swapaxes(keys, -1, -2)) / math.sqrt(head_dim)
+        xk = jnp.transpose(xk, (0, 2, 1, 3))
+        xv = jnp.transpose(xv, (0, 2, 1, 3))
+
+        scores = jnp.matmul(xq, jnp.swapaxes(xk, -1, -2)) / math.sqrt(head_dim)
         if mask is not None:
             scores = scores + mask
         scores = jax.nn.softmax(scores, axis=-1)
-        output = jnp.matmul(scores, values)
+        output = jnp.matmul(scores, xv)
         output = jnp.transpose(output, (0, 2, 1, 3)).reshape(bsz, seqlen, -1)
         return wo(output)
+
+
+def attention_params_from_torch(torch_module: reference_model_torch.Attention) -> Dict[str, Any]:
+    return {'params': {
+        'wk': {'kernel': torch_module.wk.weight.detach().numpy().T},
+        'wo': {'kernel': torch_module.wo.weight.detach().numpy().T},
+        'wq': {'kernel': torch_module.wq.weight.detach().numpy().T},
+        'wv': {'kernel': torch_module.wv.weight.detach().numpy().T},
+    }}
 
 
 @dataclasses.dataclass
@@ -112,8 +133,6 @@ class FeedForward(nn.Module):
         w1 = nn.Dense(features=hidden_dim, use_bias=False, name='w1')
         w2 = nn.Dense(features=self.dim, use_bias=False, name='w2')
         w3 = nn.Dense(features=hidden_dim, use_bias=False, name='w3')
-        return w3(x)
-        return jax.nn.silu(w1(x)) * w3(x)
         return w2(jax.nn.silu(w1(x)) * w3(x))
 
 

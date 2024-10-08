@@ -17,7 +17,8 @@ RUN pip install --no-cache-dir \
     torch \
     numpy \
     fairscale \
-    pytest
+    pytest \
+    parameterized
 
 # Copy your Python files into the container
 COPY . .

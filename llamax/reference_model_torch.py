@@ -32,9 +32,10 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
     assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+    assert freqs_cis.shape == (x.shape[1], x.shape[-1]), f'{freqs_cis.shape=}, {x.shape=}'
     shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(*shape)
+    print(f'{shape=}')
+    return freqs_cis.reshape(*shape)
 
 
 def apply_rotary_emb(
@@ -44,6 +45,7 @@ def apply_rotary_emb(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+    print(f'{xq_.shape=}, {freqs_cis.shape=}')
     freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
@@ -99,7 +101,7 @@ class Attention(nn.Module):
                 self.n_local_kv_heads,
                 self.head_dim,
             )
-        ).cuda()
+        )
         self.cache_v = torch.zeros(
             (
                 args.max_batch_size,
@@ -107,7 +109,12 @@ class Attention(nn.Module):
                 self.n_local_kv_heads,
                 self.head_dim,
             )
-        ).cuda()
+        )
+        # Generally, you don't want to run this model on CPU, but it can
+        # be useful to do so during testing.
+        if torch.cuda.is_available():
+            self.cache_k.cuda()
+            self.cache_v.cuda()
 
     def forward(
         self,
@@ -182,8 +189,6 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x):
-        return self.w3(x)
-        return F.silu(self.w1(x)) * self.w3(x)
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 

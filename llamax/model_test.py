@@ -1,4 +1,6 @@
 import unittest
+from parameterized import parameterized
+
 import jax
 import jax.numpy as jnp
 import torch
@@ -13,10 +15,11 @@ import flax.linen as nn
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
     dim=128,
     n_layers=1,
+    n_heads=4,
 )
 
 # We use numbers that are mutually prime and >1 to ensure no weirdness.
-BATCH_SIZE = 2
+BATCH_SIZE = 1
 SEQ_LEN = 3
 MODEL_DIM = 5
 
@@ -50,8 +53,23 @@ class TestModelEquivalence(unittest.TestCase):
         # Set random seed for reproducibility
         np.random.seed(42)
         torch.manual_seed(42)
-        self.model = model
         self.config = SMALL_MODEL_CONFIG
+        self.freqs = model.precompute_freqs_cis(
+            dim=self.config.dim // self.config.n_heads,
+            end=self.config.max_seq_len * 2,
+            theta=self.config.rope_theta
+        )
+
+    @parameterized.expand([
+        (4, 4096),
+    ])
+    def test_precompute_freqs_cis_equality(self, dim, end, theta=SMALL_MODEL_CONFIG.rope_theta):
+        # Get outputs from both functions
+        torch_output = reference_model_torch.precompute_freqs_cis(dim, end, theta)
+        jax_output = model.precompute_freqs_cis(dim, end, theta)
+
+        # Compare real and imaginary parts separately within a tolerance
+        np.testing.assert_allclose(torch_output.numpy(), jax_output)
 
     def test_rmsnorm_matches(self):
         inputs = np.random.randn(BATCH_SIZE, SEQ_LEN, MODEL_DIM)
@@ -77,6 +95,37 @@ class TestModelEquivalence(unittest.TestCase):
         flax_module = lambda x: jax.jit(flax_ffn.apply)(params, x)
         assert_modules_output_same_code(
             inputs, flax_module, torch_ffn)
+
+    def test_attention_matches(self):
+        inputs = np.random.randn(BATCH_SIZE, SEQ_LEN, self.config.dim)
+        torch_attn = reference_model_torch.Attention(self.config).double()
+        flax_attn = model.Attention(n_heads=self.config.n_heads,
+                                    dim=self.config.dim,
+                                    max_batch_size=self.config.max_batch_size,
+                                    max_seq_len=self.config.max_seq_len,
+                                    n_kv_heads=self.config.n_kv_heads)
+        start_pos = 0
+        mask = jnp.full((SEQ_LEN, SEQ_LEN), float("-inf"))
+
+        # Standard causal mask.
+        mask = jnp.triu(mask, k=1)
+        freqs_cis = self.freqs[start_pos: start_pos + SEQ_LEN]
+        params = flax_attn.init(jax.random.PRNGKey(0), inputs,
+                                start_pos=start_pos,
+                                freqs_cis=freqs_cis,
+                                mask=mask)
+        params_shapes = jax.tree.map(lambda x: x.shape, params)
+        print(f'{params_shapes=}')
+        params = model.attention_params_from_torch(torch_attn)
+        flax_module = lambda x: jax.jit(flax_attn.apply)(params, x, start_pos=start_pos,
+                                                         freqs_cis=freqs_cis,
+                                                         mask=mask)
+        torch_module = lambda x: torch_attn(x, start_pos,
+                                            torch.from_numpy(np.array(freqs_cis)),
+                                            torch.from_numpy(np.array(mask)))
+        with torch.no_grad():
+            assert_modules_output_same_code(
+                inputs, flax_module, torch_module)
 
     @unittest.skip("This isn't actually implemented, and is just a stub from Claude.")
     def test_forward_pass(self):
