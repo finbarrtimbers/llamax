@@ -19,7 +19,7 @@ SMALL_MODEL_CONFIG = llamax.ModelArgs(
 )
 
 # We use numbers that are mutually prime and >1 to ensure no weirdness.
-BATCH_SIZE = 1
+BATCH_SIZE = 2
 SEQ_LEN = 3
 MODEL_DIM = 5
 
