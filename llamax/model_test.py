@@ -136,7 +136,7 @@ class TestModelEquivalence(unittest.TestCase):
         freqs_cis = self.freqs[start_pos: start_pos + SEQ_LEN]
         params = model.block_params_from_module(torch_block)
 
-        torch_module = lambda x: torch_block(torch.from_numpy(np.array(x)),
+        torch_module = lambda x: torch_block(x,
                                              start_pos,
                                              torch.from_numpy(np.array(freqs_cis)),
                                              torch.from_numpy(np.array(mask)))
