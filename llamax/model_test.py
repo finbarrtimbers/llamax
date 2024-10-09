@@ -1,6 +1,6 @@
 import unittest
 from parameterized import parameterized
-
+import dataclasses
 import jax
 import jax.numpy as jnp
 import torch
@@ -75,9 +75,9 @@ class TestModelEquivalence(unittest.TestCase):
         inputs = np.random.randn(BATCH_SIZE, SEQ_LEN, MODEL_DIM)
         flax_rmsnorm = model.RMSNorm(dim=MODEL_DIM, eps=self.config.norm_eps)
         params = flax_rmsnorm.init(jax.random.key(0), inputs)
-        apply_fn = jax.jit(flax_rmsnorm.apply)
-        flax_module = lambda x: apply_fn(params, x)
         torch_rmsnorm = reference_model_torch.RMSNorm(dim=MODEL_DIM, eps=self.config.norm_eps).to(torch.float64)
+        params = {'params': model.rmsnorm_params_from_torch(torch_rmsnorm)}
+        flax_module = lambda x: jax.jit(flax_rmsnorm.apply)(params, x)
 
         assert_modules_output_same_code(inputs, flax_module, torch_rmsnorm)
 
@@ -91,7 +91,7 @@ class TestModelEquivalence(unittest.TestCase):
                                                       hidden_dim=4*self.config.dim,
                                                       multiple_of=self.config.multiple_of,
                                                       ffn_dim_multiplier=self.config.ffn_dim_multiplier).to(torch.float64)
-        params = model.feedforward_params_from_torch(torch_ffn)
+        params = {'params': model.feedforward_params_from_torch(torch_ffn)}
         flax_module = lambda x: jax.jit(flax_ffn.apply)(params, x)
         assert_modules_output_same_code(
             inputs, flax_module, torch_ffn)
@@ -110,13 +110,7 @@ class TestModelEquivalence(unittest.TestCase):
         # Standard causal mask.
         mask = jnp.triu(mask, k=1)
         freqs_cis = self.freqs[start_pos: start_pos + SEQ_LEN]
-        params = flax_attn.init(jax.random.PRNGKey(0), inputs,
-                                start_pos=start_pos,
-                                freqs_cis=freqs_cis,
-                                mask=mask)
-        params_shapes = jax.tree.map(lambda x: x.shape, params)
-        print(f'{params_shapes=}')
-        params = model.attention_params_from_torch(torch_attn)
+        params = {'params': model.attention_params_from_torch(torch_attn)}
         flax_module = lambda x: jax.jit(flax_attn.apply)(params, x, start_pos=start_pos,
                                                          freqs_cis=freqs_cis,
                                                          mask=mask)
@@ -126,6 +120,28 @@ class TestModelEquivalence(unittest.TestCase):
         with torch.no_grad():
             assert_modules_output_same_code(
                 inputs, flax_module, torch_module)
+
+    def test_transformer_block(self):
+        inputs = np.random.randn(BATCH_SIZE, SEQ_LEN, self.config.dim)
+        torch_block = reference_model_torch.TransformerBlock(
+            layer_id=0, args=self.config).double()
+        flax_block = model.TransformerBlock(
+            layer_id=0,
+            config=self.config)
+        start_pos = 0
+        mask = jnp.full((SEQ_LEN, SEQ_LEN), float("-inf"))
+
+        # Standard causal mask.
+        mask = jnp.triu(mask, k=1)
+        freqs_cis = self.freqs[start_pos: start_pos + SEQ_LEN]
+        params = model.block_params_from_module(torch_block)
+
+        torch_module = lambda x: torch_block(torch.from_numpy(np.array(x)),
+                                             start_pos,
+                                             torch.from_numpy(np.array(freqs_cis)),
+                                             torch.from_numpy(np.array(mask)))
+        flax_module = lambda x: flax_block.apply(params, x, start_pos, freqs_cis, mask)
+        assert_modules_output_same_code(inputs, flax_module, torch_module)
 
     @unittest.skip("This isn't actually implemented, and is just a stub from Claude.")
     def test_forward_pass(self):

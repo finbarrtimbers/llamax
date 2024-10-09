@@ -7,6 +7,7 @@ import flax
 import flax.linen as nn
 import dataclasses
 
+import llamax
 from llamax import reference_model_torch
 
 @dataclasses.dataclass
@@ -18,6 +19,10 @@ class RMSNorm(nn.Module):
     def __call__(self, x):
         weight = self.param('weight', nn.initializers.ones, (self.dim,))
         return x * jax.lax.rsqrt(jnp.mean(x**2, axis=-1, keepdims=True) + self.eps) * weight
+
+
+def rmsnorm_params_from_torch(torch_module: reference_model_torch.RMSNorm) -> Dict[str, Any]:
+    return {'weight': torch_module.weight.detach().numpy()}
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
@@ -108,12 +113,12 @@ class Attention(nn.Module):
 
 
 def attention_params_from_torch(torch_module: reference_model_torch.Attention) -> Dict[str, Any]:
-    return {'params': {
+    return {
         'wk': {'kernel': torch_module.wk.weight.detach().numpy().T},
         'wo': {'kernel': torch_module.wo.weight.detach().numpy().T},
         'wq': {'kernel': torch_module.wq.weight.detach().numpy().T},
         'wv': {'kernel': torch_module.wv.weight.detach().numpy().T},
-    }}
+    }
 
 
 @dataclasses.dataclass
@@ -137,33 +142,37 @@ class FeedForward(nn.Module):
 
 
 def feedforward_params_from_torch(torch_module: reference_model_torch.FeedForward) -> Dict[str, Any]:
-    return {'params':
-            {'w1': {'kernel': torch_module.w1.weight.detach().numpy().T},
+    return {'w1': {'kernel': torch_module.w1.weight.detach().numpy().T},
              'w2': {'kernel': torch_module.w2.weight.detach().numpy().T},
-             'w3': {'kernel': torch_module.w3.weight.detach().numpy().T}}}
+             'w3': {'kernel': torch_module.w3.weight.detach().numpy().T}}
 
 
 @dataclasses.dataclass
 class TransformerBlock(nn.Module):
     layer_id: int
-    n_heads: int
-    dim: int
-    multiple_of: int
-    max_batch_size: int
-    max_seq_len: int
-    ffn_dim_multiplier: Optional[float] = None
-    norm_eps: float = 1e-5
+    config: llamax.ModelArgs
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, start_pos: int, freqs_cis: jnp.ndarray, mask: Optional[jnp.ndarray]):
-        attention = Attention(n_heads=self.n_heads, dim=self.dim, max_batch_size=self.max_batch_size, max_seq_len=self.max_seq_len)
-        feed_forward = FeedForward(dim=self.dim, hidden_dim=4 * self.dim, multiple_of=self.multiple_of, ffn_dim_multiplier=self.ffn_dim_multiplier)
-        attention_norm = RMSNorm(self.dim, eps=self.norm_eps)
-        ffn_norm = RMSNorm(self.dim, eps=self.norm_eps)
+        attention = Attention(n_heads=self.config.n_heads, dim=self.config.dim, max_batch_size=self.config.max_batch_size, max_seq_len=self.config.max_seq_len)
+        feed_forward = FeedForward(dim=self.config.dim, hidden_dim=4 * self.config.dim, multiple_of=self.config.multiple_of, ffn_dim_multiplier=self.config.ffn_dim_multiplier)
+        attention_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
+        ffn_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
 
         h = x + attention(attention_norm(x), start_pos, freqs_cis, mask)
         out = h + feed_forward(ffn_norm(h))
         return out
+
+
+def block_params_from_module(
+    torch_module: reference_model_torch.TransformerBlock) -> Dict[str, Any]:
+    return {
+        'params': {
+            f'Attention_0': attention_params_from_torch(torch_module.attention),
+            f'FeedForward_0': feedforward_params_from_torch(torch_module.feed_forward),
+            f'RMSNorm_0': rmsnorm_params_from_torch(torch_module.attention_norm),
+            f'RMSNorm_1': rmsnorm_params_from_torch(torch_module.ffn_norm),
+    }}
 
 
 @dataclasses.dataclass
