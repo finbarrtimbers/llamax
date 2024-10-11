@@ -1,6 +1,5 @@
 import unittest
 from parameterized import parameterized
-import dataclasses
 import jax
 import jax.numpy as jnp
 import torch
@@ -13,6 +12,7 @@ from llamax import reference_model_torch
 import flax.linen as nn
 
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
+    vocab_size=1_000,
     dim=128,
     n_layers=1,
     n_heads=4,
@@ -77,7 +77,8 @@ class TestModelEquivalence(unittest.TestCase):
         params = flax_rmsnorm.init(jax.random.key(0), inputs)
         torch_rmsnorm = reference_model_torch.RMSNorm(dim=MODEL_DIM, eps=self.config.norm_eps).to(torch.float64)
         params = {'params': model.rmsnorm_params_from_torch(torch_rmsnorm)}
-        flax_module = lambda x: jax.jit(flax_rmsnorm.apply)(params, x)
+        def flax_module(x):
+            return jax.jit(flax_rmsnorm.apply)(params, x)
 
         assert_modules_output_same_code(inputs, flax_module, torch_rmsnorm)
 
@@ -92,7 +93,8 @@ class TestModelEquivalence(unittest.TestCase):
                                                       multiple_of=self.config.multiple_of,
                                                       ffn_dim_multiplier=self.config.ffn_dim_multiplier).to(torch.float64)
         params = {'params': model.feedforward_params_from_torch(torch_ffn)}
-        flax_module = lambda x: jax.jit(flax_ffn.apply)(params, x)
+        def flax_module(x):
+            return jax.jit(flax_ffn.apply)(params, x)
         assert_modules_output_same_code(
             inputs, flax_module, torch_ffn)
 
@@ -111,12 +113,10 @@ class TestModelEquivalence(unittest.TestCase):
         mask = jnp.triu(mask, k=1)
         freqs_cis = self.freqs[start_pos: start_pos + SEQ_LEN]
         params = {'params': model.attention_params_from_torch(torch_attn)}
-        flax_module = lambda x: jax.jit(flax_attn.apply)(params, x, start_pos=start_pos,
-                                                         freqs_cis=freqs_cis,
-                                                         mask=mask)
-        torch_module = lambda x: torch_attn(x, start_pos,
-                                            torch.from_numpy(np.array(freqs_cis)),
-                                            torch.from_numpy(np.array(mask)))
+        def flax_module(x):
+            return jax.jit(flax_attn.apply)(params, x, start_pos=start_pos, freqs_cis=freqs_cis, mask=mask)
+        def torch_module(x):
+            return torch_attn(x, start_pos, torch.from_numpy(np.array(freqs_cis)), torch.from_numpy(np.array(mask)))
         with torch.no_grad():
             assert_modules_output_same_code(
                 inputs, flax_module, torch_module)
@@ -136,32 +136,33 @@ class TestModelEquivalence(unittest.TestCase):
         freqs_cis = self.freqs[start_pos: start_pos + SEQ_LEN]
         params = model.block_params_from_module(torch_block)
 
-        torch_module = lambda x: torch_block(x,
-                                             start_pos,
-                                             torch.from_numpy(np.array(freqs_cis)),
-                                             torch.from_numpy(np.array(mask)))
-        flax_module = lambda x: flax_block.apply(params, x, start_pos, freqs_cis, mask)
+        def torch_module(x):
+            return torch_block(x, start_pos, torch.from_numpy(np.array(freqs_cis)), torch.from_numpy(np.array(mask)))
+        def flax_module(x):
+            return flax_block.apply(params, x, start_pos, freqs_cis, mask)
         assert_modules_output_same_code(inputs, flax_module, torch_module)
 
-    @unittest.skip("This isn't actually implemented, and is just a stub from Claude.")
     def test_forward_pass(self):
-        # Create random input data
-        input_data = np.random.randn(1, 3, 224, 224)
+        inputs = np.random.randn(BATCH_SIZE, SEQ_LEN, self.config.dim)
+        torch_model = reference_model_torch.Transformer(self.config)
 
-        # Convert input to appropriate types
-        jax_input = jnp.array(input_data, dtype=jnp.float64)
-        torch_input = torch.tensor(input_data, dtype=torch.float64)
+        flax_model = model.Transformer(config=self.config)
+        start_pos = 0
 
-        # Get outputs from both models
-        jax_output = self.flax_model.apply({'params': self.flax_model.params}, jax_input)
-        torch_output = self.torch_model(torch_input)
+        params = flax_model.init(jax.random.PRNGKey(0),
+                                 inputs, start_pos)
+        params_shapes = jax.tree.map(lambda x: x.shape, params)
+        print(f'{params_shapes=}')
 
-        # Convert outputs to numpy arrays
-        jax_output_np = np.array(jax_output)
-        torch_output_np = torch_output.detach().numpy()
+        # Standard causal mask.
+        params = model.transformer_params_from_module(torch_model)
 
-        # Check if outputs are equal within a small tolerance
-        np.testing.assert_allclose(jax_output_np, torch_output_np, rtol=1e-5, atol=1e-5)
+        def torch_module(x):
+            return torch_model(x, start_pos)
+        def flax_module(x):
+            return flax_model.apply(params, x, start_pos)
+        assert_modules_output_same_code(inputs, flax_module, torch_module)
+
 
     @unittest.skip("This isn't actually implemented, and is just a stub from Claude.")
     def test_gradient_computation(self):

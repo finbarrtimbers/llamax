@@ -3,7 +3,6 @@ from typing import Any, Dict, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
-import flax
 import flax.linen as nn
 import dataclasses
 
@@ -168,31 +167,22 @@ def block_params_from_module(
     torch_module: reference_model_torch.TransformerBlock) -> Dict[str, Any]:
     return {
         'params': {
-            f'Attention_0': attention_params_from_torch(torch_module.attention),
-            f'FeedForward_0': feedforward_params_from_torch(torch_module.feed_forward),
-            f'RMSNorm_0': rmsnorm_params_from_torch(torch_module.attention_norm),
-            f'RMSNorm_1': rmsnorm_params_from_torch(torch_module.ffn_norm),
+            'Attention_0': attention_params_from_torch(torch_module.attention),
+            'FeedForward_0': feedforward_params_from_torch(torch_module.feed_forward),
+            'RMSNorm_0': rmsnorm_params_from_torch(torch_module.attention_norm),
+            'RMSNorm_1': rmsnorm_params_from_torch(torch_module.ffn_norm),
     }}
 
 
 @dataclasses.dataclass
 class Transformer(nn.Module):
-    vocab_size: int
-    n_layers: int
-    n_heads: int
-    dim: int
-    max_seq_len: int
-    max_batch_size: int
-    multiple_of: int
-    ffn_dim_multiplier: Optional[float] = None
-    norm_eps: float = 1e-5
-    rope_theta: float = 10000.0
+    config: llamax.ModelArgs
 
     @nn.compact
     def __call__(self, tokens: jnp.ndarray, start_pos: int):
-        tok_embeddings = nn.Embed(self.vocab_size, self.dim)
+        tok_embeddings = nn.Embed(self.config.vocab_size, self.config.dim)
 
-        freqs_cis = precompute_freqs_cis(self.dim // self.n_heads, self.max_seq_len * 2, self.rope_theta)
+        freqs_cis = precompute_freqs_cis(self.config.dim // self.config.n_heads, self.config.max_seq_len * 2, self.config.rope_theta)
 
         h = tok_embeddings(tokens)
         freqs_cis = jax.lax.dynamic_slice_in_dim(freqs_cis, start_pos, tokens.shape[1], axis=0)
@@ -206,15 +196,18 @@ class Transformer(nn.Module):
         for layer_id in range(self.n_layers):
             h = TransformerBlock(
                 layer_id=layer_id,
-                n_heads=self.n_heads,
-                dim=self.dim,
-                multiple_of=self.multiple_of,
-                ffn_dim_multiplier=self.ffn_dim_multiplier,
-                norm_eps=self.norm_eps,
-                max_batch_size=self.max_batch_size,
-                max_seq_len=self.max_seq_len
+                n_heads=self.config.n_heads,
+                dim=self.config.dim,
+                multiple_of=self.config.multiple_of,
+                ffn_dim_multiplier=self.config.ffn_dim_multiplier,
+                norm_eps=self.config.norm_eps,
+                max_batch_size=self.config.max_batch_size,
+                max_seq_len=self.config.max_seq_len
             )(h, start_pos, freqs_cis, mask)
 
-        h = RMSNorm(self.dim, eps=self.norm_eps)(h)
-        output = nn.Dense(features=self.vocab_size, use_bias=False)(h)
+        h = RMSNorm(self.config.dim, eps=self.config.norm_eps)(h)
+        output = nn.Dense(features=self.config.vocab_size, use_bias=False)(h)
         return output
+
+def transformer_params_from_module(torch_module: reference_model_torch.Transformer) -> Dict[str, Any]:
+    return {}
