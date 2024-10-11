@@ -2,6 +2,7 @@ import dataclasses
 
 from typing import Optional
 
+
 @dataclasses.dataclass
 class ModelArgs:
     dim: int = 4096

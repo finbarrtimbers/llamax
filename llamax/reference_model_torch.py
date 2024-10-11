@@ -7,6 +7,7 @@ from torch import nn
 
 import llamax
 
+
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
@@ -32,9 +33,12 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
     assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1]), f'{freqs_cis.shape=}, {x.shape=}'
+    assert freqs_cis.shape == (
+        x.shape[1],
+        x.shape[-1],
+    ), f"{freqs_cis.shape=}, {x.shape=}"
     shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    print(f'{shape=}')
+    print(f"{shape=}")
     return freqs_cis.reshape(*shape)
 
 
@@ -45,7 +49,7 @@ def apply_rotary_emb(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-    print(f'{xq_.shape=}, {freqs_cis.shape=}')
+    print(f"{xq_.shape=}, {freqs_cis.shape=}")
     freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
@@ -179,13 +183,19 @@ class FeedForward(nn.Module):
         hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
         self.w1 = nn.Linear(
-            dim, hidden_dim, bias=False,
+            dim,
+            hidden_dim,
+            bias=False,
         )
         self.w2 = nn.Linear(
-            hidden_dim, dim, bias=False,
+            hidden_dim,
+            dim,
+            bias=False,
         )
         self.w3 = nn.Linear(
-            dim, hidden_dim, bias=False,
+            dim,
+            hidden_dim,
+            bias=False,
         )
 
     def forward(self, x):
@@ -228,8 +238,7 @@ class Transformer(nn.Module):
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
 
-        self.tok_embeddings = nn.Embedding(
-            params.vocab_size, params.dim)
+        self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
 
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
@@ -237,7 +246,9 @@ class Transformer(nn.Module):
 
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(
-            params.dim, params.vocab_size, bias=False,
+            params.dim,
+            params.vocab_size,
+            bias=False,
         )
 
         self.freqs_cis = precompute_freqs_cis(
