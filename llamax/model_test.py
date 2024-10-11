@@ -154,7 +154,7 @@ class TestModelEquivalence(unittest.TestCase):
         # Standard causal mask.
         mask = jnp.triu(mask, k=1)
         freqs_cis = self.freqs[start_pos : start_pos + SEQ_LEN]
-        params = model.block_params_from_module(torch_block)
+        params = {"params": model.block_params_from_module(torch_block)}
 
         def torch_module(x):
             return torch_block(
@@ -183,7 +183,9 @@ class TestModelEquivalence(unittest.TestCase):
         print(f"{params_shapes=}")
 
         # Standard causal mask.
-        # params = model.transformer_params_from_module(torch_model)
+        params = model.transformer_params_from_module(torch_model)
+        # jax.tree.map(lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
+        #             params, new_params)
 
         def torch_module(x):
             return torch_model(x, start_pos)

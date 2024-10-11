@@ -211,12 +211,10 @@ def block_params_from_module(
     torch_module: reference_model_torch.TransformerBlock,
 ) -> Dict[str, Any]:
     return {
-        "params": {
-            "Attention_0": attention_params_from_torch(torch_module.attention),
-            "FeedForward_0": feedforward_params_from_torch(torch_module.feed_forward),
-            "RMSNorm_0": rmsnorm_params_from_torch(torch_module.attention_norm),
-            "RMSNorm_1": rmsnorm_params_from_torch(torch_module.ffn_norm),
-        }
+        "Attention_0": attention_params_from_torch(torch_module.attention),
+        "FeedForward_0": feedforward_params_from_torch(torch_module.feed_forward),
+        "RMSNorm_0": rmsnorm_params_from_torch(torch_module.attention_norm),
+        "RMSNorm_1": rmsnorm_params_from_torch(torch_module.ffn_norm),
     }
 
 
@@ -263,13 +261,15 @@ def transformer_params_from_module(
 ) -> Dict[str, Any]:
     params = {
         "params": {
-            "Dense_0": {"kernel": torch_module},
-            "Embed_0": {"embedding": torch_module.embedding},
+            "Dense_0": {"kernel": torch_module.output.weight.detach().numpy().T},
+            "Embed_0": {
+                "embedding": torch_module.tok_embeddings.weight.detach().numpy()
+            },
             "RMSNorm_0": rmsnorm_params_from_torch(torch_module.norm),
         }
     }
     for layer_id in range(torch_module.n_layers):
-        params[f"TransformerBlock_{layer_id}"] = block_params_from_module(
+        params["params"][f"TransformerBlock_{layer_id}"] = block_params_from_module(
             torch_module.layers[layer_id]
         )
     return params
