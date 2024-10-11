@@ -6,7 +6,8 @@ This is still a work in-progress; use at your own risk.
 
 ## TODO
 
-- [ ] Verify that Flax code matches [reference implementation](https://github.com/meta-llama/llama3/blob/main/llama/model.py) at 6 significant digits in float64 on CPU.
+- [x] Verify that Flax code matches [reference implementation](https://github.com/meta-llama/llama3/blob/main/llama/model.py) at 6 significant digits in float64 on CPU.
+- [ ] Test that the Flax code matches with the actual Llama3 weights, on GPU, via Modal.
 - [ ] Support passing in `kv_mask` and `pairwise_mask` to support padded sequences. Test that this works properly.
 - [ ] Implement flax sharding, at least model-parallel + data-parallel.
 - [ ] Change the main transformer loop to use a scan instead.
