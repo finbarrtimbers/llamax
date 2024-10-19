@@ -1,5 +1,10 @@
 # llamax
 
+
+
+![Tests](https://github.com/finbarrtimbers/llamax/actions/workflows/test/badge.svg)
+![Coverage](https://gist.githubusercontent.com/finbarrtimbers/<GIST_ID>/raw/coverage.svg)
+
 A llama3 implementation in Flax, which aims to be compatible with the official torch version up to floating point error.
 
 This is still a work in-progress; use at your own risk.
