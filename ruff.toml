@@ -10,7 +10,7 @@ select = [
 ]
 
 # This bans making lowercase imports uppercase, which seems silly.
-ignore = ["F401"]
+ignore = ["N812"]
 
 # Specifically target unused arguments
 per-file-ignores = {"__init__.py" = ["F401"]} # ignore unused imports in __init__.py files
