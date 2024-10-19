@@ -1,0 +1,13 @@
+# ruff.toml
+select = [
+    "F",   # pyflakes
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "N",   # pep8-naming
+    "B",   # flake8-bugbear
+    "ARG", # unused arguments
+]
+
+# Specifically target unused arguments
+[per-file-ignores]
+"__init__.py" = ["F401"] # ignore unused imports in __init__.py files
