@@ -22,24 +22,22 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
         cache-dependency-path: requirements.txt
-          
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install pytest pytest-cov
 
-    - name: Run tests
+    - name: Run tests with coverage
       run: |
         pytest --doctest-modules --junitxml=junit/test-results-${{ matrix.python-version }}.xml --cov=. --cov-report=xml --cov-report=html
+        coverage-badge -o coverage.svg -f
 
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      if: always()
+    - name: Upload coverage badge
+      uses: exuanbo/actions-deploy-gist@v1
       with:
-        name: test-results-${{ matrix.python-version }}
-        path: |
-          junit/test-results-${{ matrix.python-version }}.xml
-          coverage.xml
-          htmlcov/
-        retention-days: 30
+        token: ${{ secrets.GIST_SECRET }}
+        gist_id: 12ba425b48b5fe95dce24fba21bcbf70
+        file_path: coverage.svg
+        file_type: text
