@@ -92,7 +92,7 @@ class Attention(nn.Module):
     def __call__(
         self,
         x: jnp.ndarray,
-        start_pos: int,
+        unused_start_pos: int,  # This is unused until we have a KV cache.
         freqs_cis: jnp.ndarray,
         mask: Optional[jnp.ndarray],
     ):
