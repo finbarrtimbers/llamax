@@ -2,8 +2,9 @@
 
 
 
-![Tests](https://github.com/finbarrtimbers/llamax/actions/workflows/test/badge.svg)
-![Coverage](https://gist.githubusercontent.com/finbarrtimbers/<GIST_ID>/raw/coverage.svg)
+![Lint](https://github.com/finbarrtimbers/llamax/actions/workflows/lint.yml/badge.svg)
+![Tests](https://github.com/finbarrtimbers/llamax/actions/workflows/test.yml/badge.svg)
+![Coverage](https://gist.githubusercontent.com/finbarrtimbers/12ba425b48b5fe95dce24fba21bcbf70/raw/coverage.svg)
 
 A llama3 implementation in Flax, which aims to be compatible with the official torch version up to floating point error.
 
