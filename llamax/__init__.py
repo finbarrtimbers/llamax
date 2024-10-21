@@ -2,6 +2,8 @@ import dataclasses
 
 from typing import Optional
 
+import jax.numpy as jnp
+
 
 @dataclasses.dataclass
 class ModelArgs:
@@ -17,3 +19,9 @@ class ModelArgs:
 
     max_batch_size: int = 32
     max_seq_len: int = 2048
+
+
+def make_causal_mask(seq_len: int) -> jnp.ndarray:
+    mask = jnp.full((seq_len, seq_len), float("-inf"))
+    mask = jnp.triu(mask, k=1)
+    return mask
