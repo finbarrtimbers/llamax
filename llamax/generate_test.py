@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 import numpy as np
 
-from transformers import LlamaTokenizer
+import transformers
 
 
 import llamax
@@ -18,7 +18,9 @@ class TestTextGeneration(unittest.TestCase):
     def setUpClass(cls):
         """Set up any necessary resources that will be shared across tests."""
         # Initialize tokenizer
-        cls.tokenizer = LlamaTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+        cls.tokenizer = transformers.AutoTokenizer.from_pretrained(
+            "meta-llama/Llama-3.1-8B"
+        )
 
         # Initialize model
         cls.config = llamax.ModelArgs(
@@ -47,14 +49,13 @@ class TestTextGeneration(unittest.TestCase):
 
     def test_basic_generation(self):
         """Test basic text generation functionality."""
+        input_ids = self.tokenizer(self.test_prompt)
+        print(f"{input_ids=}")
         generated = generate.generate_text(
-            params=self.params,
-            model=self.model,
-            tokenizer=self.tokenizer,
-            prompt=self.test_prompt,
-            max_length=self.max_length,
-            temperature=self.temperature,
-            seed=self.seed,
+            self.params,
+            self.model,
+            self.tokenizer,
+            self.test_prompt,
         )
 
         self.assertIsInstance(generated, str)

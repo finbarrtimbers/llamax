@@ -1,9 +1,9 @@
-import dataclasses
+from flax import struct
 
 from typing import Optional
 
 
-@dataclasses.dataclass
+@struct.dataclass
 class ModelArgs:
     dim: int = 4096
     n_layers: int = 32

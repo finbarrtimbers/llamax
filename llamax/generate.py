@@ -29,7 +29,7 @@ import functools as ft
 
 
 @ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k", "top_p"))
-def generate_text(
+def generate_tokens(
     params: Dict,
     model: nn.Module,
     input_ids: jnp.ndarray,
@@ -101,6 +101,10 @@ def generate_text(
 
         # Get model output for current sequence
         valid_len = jnp.sum(cur_mask, axis=1)
+        cur_input = jax.lax.dynamic_slice_in_dim(
+            cur_output,
+            0,
+        )
         cur_input = cur_output[:, : valid_len[0]]  # Use only valid tokens
         outputs = model.apply({"params": params}, cur_input)
         next_token_logits = outputs[:, -1, :]
@@ -133,7 +137,7 @@ def generate_text(
     return final_state[1], final_state[2]
 
 
-def generate_text_from_prompt(
+def generate_text(
     params: Dict,
     model: nn.Module,
     tokenizer,
@@ -155,7 +159,7 @@ def generate_text_from_prompt(
     key = jax.random.PRNGKey(seed)
 
     # Generate tokens
-    generated_ids, attention_mask = generate_text(
+    generated_ids, attention_mask = generate_tokens(
         params=params,
         model=model,
         input_ids=input_ids,
