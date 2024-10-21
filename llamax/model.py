@@ -224,7 +224,9 @@ class Transformer(nn.Module):
     config: llamax.ModelArgs
 
     @nn.compact
-    def __call__(self, tokens: jnp.ndarray, start_pos: int):
+    def __call__(
+        self, tokens: jnp.ndarray, start_pos: int, mask: Optional[jnp.ndarray] = None
+    ):
         tok_embeddings = nn.Embed(self.config.vocab_size, self.config.dim)
 
         freqs_cis = precompute_freqs_cis(
@@ -237,14 +239,6 @@ class Transformer(nn.Module):
         freqs_cis = jax.lax.dynamic_slice_in_dim(
             freqs_cis, start_pos, tokens.shape[1], axis=0
         )
-
-        mask = None
-        if tokens.shape[1] > 1:
-            mask = jnp.full((tokens.shape[1], tokens.shape[1]), float("-inf"))
-            mask = jnp.triu(mask, k=1)
-            mask = jnp.concatenate(
-                [jnp.zeros((tokens.shape[1], start_pos)), mask], axis=1
-            )
 
         for layer_id in range(self.config.n_layers):
             h = TransformerBlock(
