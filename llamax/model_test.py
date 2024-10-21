@@ -178,22 +178,41 @@ class TestModelEquivalence(unittest.TestCase):
         flax_model = model.Transformer(config=self.config)
         start_pos = 0
 
-        params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos)
-        params_shapes = jax.tree.map(lambda x: x.shape, params)
-        print(f"{params_shapes=}")
+        mask = llamax.make_causal_mask(SEQ_LEN)
 
-        # Standard causal mask.
         params = model.transformer_params_from_module(torch_model)
-        # jax.tree.map(lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
-        #             params, new_params)
 
         def torch_module(x):
             return torch_model(x, start_pos)
 
         def flax_module(x):
-            return flax_model.apply(params, x, start_pos)
+            return flax_model.apply(params, x, start_pos, mask)
 
         assert_modules_output_same_code(inputs, flax_module, torch_module)
+
+    def test_model_behavior_with_padding(self):
+        inputs = np.random.randint(
+            0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN + 1)
+        )
+        flax_model = model.Transformer(config=self.config)
+        start_pos = 0
+
+        mask = llamax.make_causal_mask(SEQ_LEN + 1)
+
+        # Shape is (SEQ_LEN + 1, SEQ_LEN + 1)
+        # Nothing should attend to the padding token.
+        mask = mask.at[:, -1].set(float("-inf"))
+
+        # The padding token shouldn't attend to anything.
+        mask = mask.at[-1, :].set(float("-inf"))
+
+        params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos, mask)
+        apply_fn = jax.jit(flax_model.apply)
+        unpadded_output = apply_fn(params, inputs[:, :-1], start_pos, mask[:-1, :-1])
+        padded_output = apply_fn(params, inputs, start_pos, mask)
+
+        # And, of course, we throw away the last entry, as it corresponds to the output.
+        np.testing.assert_array_almost_equal(unpadded_output, padded_output[:, :-1, :])
 
     @unittest.skip("This isn't actually implemented, and is just a stub from Claude.")
     def test_gradient_computation(self):

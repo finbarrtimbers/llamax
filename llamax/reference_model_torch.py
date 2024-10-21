@@ -38,7 +38,6 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
         x.shape[-1],
     ), f"{freqs_cis.shape=}, {x.shape=}"
     shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    print(f"{shape=}")
     return freqs_cis.reshape(*shape)
 
 
@@ -49,7 +48,6 @@ def apply_rotary_emb(
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-    print(f"{xq_.shape=}, {freqs_cis.shape=}")
     freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
@@ -258,25 +256,28 @@ class Transformer(nn.Module):
         )
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: int):
+    def forward(
+        self, tokens: torch.Tensor, start_pos: int, mask: Optional[torch.Tensor] = None
+    ):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
-        mask = None
         if seqlen > 1:
-            mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+            # We set the mask to
+            if mask is None:
+                mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+                mask = torch.triu(mask, diagonal=1)
 
-            mask = torch.triu(mask, diagonal=1)
-
-            # When performing key-value caching, we compute the attention scores
-            # only for the new sequence. Thus, the matrix of scores is of size
-            # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
-            # j > cache_len + i, since row i corresponds to token cache_len + i.
-            mask = torch.hstack(
-                [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
-            ).type_as(h)
+                # When performing key-value caching, we compute the attention
+                # scores only for the new sequence. Thus, the matrix of scores
+                # is of size (seqlen, cache_len + seqlen), and the only masked
+                # entries are (i, j) for j > cache_len + i, since row i
+                # corresponds to token cache_len + i.
+                mask = torch.hstack(
+                    [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
+                ).type_as(h)
 
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)
