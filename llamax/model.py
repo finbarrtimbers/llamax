@@ -2,6 +2,7 @@ import math
 from typing import Any, Dict, Optional, Tuple
 
 import jax
+import jax_dataclasses as jdc
 import jax.numpy as jnp
 import flax.linen as nn
 import dataclasses
@@ -223,7 +224,7 @@ def block_params_from_module(
 
 @dataclasses.dataclass
 class Transformer(nn.Module):
-    config: llamax.ModelArgs
+    config: jdc.Static[llamax.ModelArgs]
 
     @nn.compact
     def __call__(

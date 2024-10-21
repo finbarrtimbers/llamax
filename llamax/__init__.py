@@ -1,11 +1,11 @@
-import dataclasses
+from flax import struct
 
 from typing import Optional
 
 import jax.numpy as jnp
 
 
-@dataclasses.dataclass
+@struct.dataclass
 class ModelArgs:
     dim: int = 4096
     n_layers: int = 32
