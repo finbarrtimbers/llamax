@@ -195,6 +195,36 @@ class TestModelEquivalence(unittest.TestCase):
 
         assert_modules_output_same_code(inputs, flax_module, torch_module)
 
+    def test_model_behavior_with_padding(self):
+        inputs = np.random.randint(0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN))
+        padding_mask = np.zeros((BATCH_SIZE, SEQ_LEN))
+        padding_mask[:, -1] = 1  # Add padding to the last token
+
+        torch_model = reference_model_torch.Transformer(self.config)
+        flax_model = model.Transformer(config=self.config)
+        start_pos = 0
+
+        params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos)
+        params = model.transformer_params_from_module(torch_model)
+
+        def torch_module(x, mask):
+            return torch_model(x, start_pos, mask)
+
+        def flax_module(x, mask):
+            return flax_model.apply(params, x, start_pos, mask)
+
+        # Get outputs without padding
+        torch_output_no_padding = torch_module(torch.tensor(inputs), None)
+        flax_output_no_padding = flax_module(jnp.array(inputs), None)
+
+        # Get outputs with padding
+        torch_output_with_padding = torch_module(torch.tensor(inputs), torch.tensor(padding_mask))
+        flax_output_with_padding = flax_module(jnp.array(inputs), jnp.array(padding_mask))
+
+        # Check if outputs are equal within a small tolerance
+        np.testing.assert_array_almost_equal(torch_output_no_padding.detach().numpy(), flax_output_no_padding)
+        np.testing.assert_array_almost_equal(torch_output_with_padding.detach().numpy(), flax_output_with_padding)
+
     @unittest.skip("This isn't actually implemented, and is just a stub from Claude.")
     def test_gradient_computation(self):
         # Create random input data

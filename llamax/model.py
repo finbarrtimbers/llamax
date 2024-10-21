@@ -192,6 +192,7 @@ class TransformerBlock(nn.Module):
             dim=self.config.dim,
             max_batch_size=self.config.max_batch_size,
             max_seq_len=self.config.max_seq_len,
+            n_kv_heads=self.config.n_kv_heads,
         )
         feed_forward = FeedForward(
             dim=self.config.dim,
