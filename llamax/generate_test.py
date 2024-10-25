@@ -17,7 +17,6 @@ class TestTextGeneration(unittest.TestCase):
     def setUpClass(cls):
         """Set up any necessary resources that will be shared across tests."""
         # Initialize tokenizer
-        print(f'{os.environ["HF_TOKEN"]=}')
         cls.tokenizer = transformers.AutoTokenizer.from_pretrained(
             "meta-llama/Llama-3.1-8B", token=os.environ["HF_TOKEN"]
         )
