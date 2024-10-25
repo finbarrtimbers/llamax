@@ -158,7 +158,9 @@ class Attention(nn.Module):
         )  # (bs, n_local_heads, cache_len + seqlen, head_dim)
         scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
         if mask is not None:
-            scores = scores + mask  # (bs, n_local_heads, seqlen, cache_len + seqlen)
+            scores = scores + (
+                float("-inf") * mask
+            )  # (bs, n_local_heads, seqlen, cache_len + seqlen)
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
         output = torch.matmul(scores, values)  # (bs, n_local_heads, seqlen, head_dim)
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
@@ -267,7 +269,7 @@ class Transformer(nn.Module):
         if seqlen > 1:
             # We set the mask to
             if mask is None:
-                mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+                mask = torch.full((seqlen, seqlen), 1, device=tokens.device)
                 mask = torch.triu(mask, diagonal=1)
 
                 # When performing key-value caching, we compute the attention

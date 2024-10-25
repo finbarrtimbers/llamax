@@ -127,7 +127,7 @@ class Attention(nn.Module):
 
         scores = jnp.matmul(xq, jnp.swapaxes(xk, -1, -2)) / math.sqrt(head_dim)
         if mask is not None:
-            scores = scores + mask
+            scores = scores + (mask * float("-inf"))
         scores = jax.nn.softmax(scores, axis=-1)
         output = jnp.matmul(scores, xv)
         output = jnp.transpose(output, (0, 2, 1, 3)).reshape(bsz, seqlen, -1)

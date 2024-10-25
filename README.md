@@ -19,10 +19,10 @@ The code is very much a work in-progress; use at your own risk.
 - [ ] Add benchmarks.
 - [ ] Test against the actual llama3 weights.
 - [ ] Add code that can run tests using Modal Labs.
-- [ ] (Stretch goal) Implement some of the fancier sharding listed in Meta's [Movie Gen](https://ai.meta.com/research/movie-gen/) paper.
+- [ ] (Stretch goal) Implement some of the fancier sharding methods listed in Meta's [Movie Gen](https://ai.meta.com/research/movie-gen/) paper.
 - [ ] Add tests on GPU.
 - [x] Pin dependency versions.
 
 ## Usage
 
-Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True llamax pytest`.
+Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`.

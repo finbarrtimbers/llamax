@@ -20,25 +20,64 @@ generated_text = generate_text(
 print(generated_text)
 """
 
+import functools as ft
+from typing import Dict, Optional, Tuple
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Optional, Tuple, Dict
+from flax import struct
 
-import functools as ft
+import llamax
+
+
+def apply_top_k(logits: jax.Array, *, top_k: int) -> jax.Array:
+    if top_k is not None:
+        _, top_k_indices = jax.lax.top_k(logits, top_k)
+
+        # Create indices for all dimensions
+        batch_size = logits.shape[0]
+        row_indices = jnp.arange(batch_size)[:, None]
+        # Broadcast row_indices to match top_k_indices shape
+        row_indices = jnp.broadcast_to(row_indices, top_k_indices.shape)
+
+        # Create mask initialized to negative infinity
+        mask = jnp.full_like(logits, float("-inf"))
+
+        # Use advanced indexing to set the top-k positions to their original values
+        mask = mask.at[row_indices, top_k_indices].set(0)
+
+        return jnp.where(mask == 0, logits, float("-inf"))
+    return logits
+
+
+@ft.partial(jax.jit, static_argnames=["p"])
+def apply_top_p(logits: jax.Array, *, p: int, temperature: float = 1.0) -> jax.Array:
+    logits = logits / temperature
+    sorted_logits, sorted_indices = jax.lax.top_k(logits, logits.shape[-1])
+    probs = jax.nn.softmax(sorted_logits)
+    cumulative_probs = jnp.cumsum(probs, axis=-1)
+    mask = (cumulative_probs <= p) | (jnp.arange(logits.shape[-1]) == 0)
+
+    # We need to transform the indices so that they map onto the flat
+    # equivalent in order to work with jnp.take.
+    offset = (sorted_indices.shape[1] * jnp.arange(sorted_indices.shape[0]))[:, None]
+    offset_indices = sorted_indices + offset
+    original_mask = jnp.take(mask, offset_indices)
+    return jnp.where(original_mask, logits, float("-inf"))
 
 
 @ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k", "top_p"))
 def generate_tokens(
     params: Dict,
     model: nn.Module,
-    input_ids: jnp.ndarray,
-    key: jnp.ndarray,
+    input_ids: jax.Array,
+    key: jax.Array,
     max_length: int = 100,
     temperature: float = 1.0,
     top_k: Optional[int] = 50,
     top_p: Optional[float] = 0.9,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> Tuple[jax.Array, jax.Array]:
     """
     JIT-compiled function for text generation using JAX structured control flow.
 
@@ -53,88 +92,75 @@ def generate_tokens(
         top_p: Cumulative probability cutoff for nucleus sampling
 
     Returns:
-        Tuple of (generated token array, attention mask)
+        Generated token arrays with shape (batch_size, max_length) and type jnp.int32.
     """
     batch_size, init_seq_len = input_ids.shape
 
     # Initialize output arrays
     output_tokens = jnp.zeros((batch_size, max_length), dtype=jnp.int32)
     output_tokens = output_tokens.at[:, :init_seq_len].set(input_ids)
-    attention_mask = jnp.zeros((batch_size, max_length), dtype=jnp.int32)
-    attention_mask = attention_mask.at[:, :init_seq_len].set(1)
+    attention_mask = llamax.make_causal_mask(max_length)
+    start_pos = 0
+
+    @struct.dataclass
+    class LoopState:
+        i: int
+        tokens: jax.Array
+        key: jax.Array
 
     def sample_token(
-        logits: jnp.ndarray, temperature: float, key: jnp.ndarray
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        logits: jax.Array, temperature: float, key: jax.Array
+    ) -> jax.Array:
         """Sample next token from logits with temperature and optional top-k/p."""
         # Apply temperature
         logits = logits / jnp.maximum(temperature, 1e-6)
 
-        def apply_top_k(logits_vals):
-            if top_k is not None:
-                _, top_k_indices = jax.lax.top_k(logits_vals, top_k)
-                mask = jnp.zeros_like(logits_vals)
-                mask = mask.at[top_k_indices].set(1)
-                return jnp.where(mask, logits_vals, -1e10)
-            return logits_vals
-
-        def apply_top_p(logits_vals):
-            if top_p is not None:
-                sorted_logits = jnp.sort(logits_vals)[::-1]
-                cumulative_probs = jnp.cumsum(jax.nn.softmax(sorted_logits))
-                mask = cumulative_probs <= top_p
-                mask = mask.at[0].set(True)
-                return jnp.where(mask, logits_vals, -1e10)
-            return logits_vals
-
         # Apply top-k and top-p filtering
-        logits = apply_top_k(logits)
-        logits = apply_top_p(logits)
+        logits = apply_top_k(logits, top_k=top_k)
+        logits = apply_top_p(logits, p=top_p)
 
         # Sample from the modified distribution
         next_token = jax.random.categorical(key, logits, axis=-1)
-        return next_token, key
+        return next_token
 
     def generation_loop(state):
         """Single step of the generation loop."""
-        i, cur_output, cur_mask, cur_key = state
-
         # Get model output for current sequence
-        valid_len = jnp.sum(cur_mask, axis=1)
-        cur_input = jax.lax.dynamic_slice_in_dim(
-            cur_output,
-            0,
+        outputs = model.apply(
+            params,
+            state.tokens,
+            start_pos,
+            # Because the mask is causal, we can just use it
+            # as-is, and then only look at the valid logits.
+            # Causality will mask out the problematic outputs.
+            attention_mask,
         )
-        cur_input = cur_output[:, : valid_len[0]]  # Use only valid tokens
-        outputs = model.apply({"params": params}, cur_input)
-        next_token_logits = outputs[:, -1, :]
+        next_token_logits = outputs[:, state.i, :]
 
         # Sample next token
-        cur_key, sample_key = jax.random.split(cur_key)
-        next_token, _ = sample_token(next_token_logits, temperature, sample_key)
+        cur_key, sample_key = jax.random.split(state.key)
+        next_token = sample_token(next_token_logits, temperature, sample_key)
 
         # Update output arrays
-        cur_output = cur_output.at[:, valid_len[0]].set(next_token)
-        cur_mask = cur_mask.at[:, valid_len[0]].set(1)
+        tokens = state.tokens.at[:, state.i].set(next_token)
 
-        return i + 1, cur_output, cur_mask, cur_key
+        return LoopState(state.i + 1, tokens, cur_key)
 
     def cond_fn(state):
         """Condition for continuing generation."""
-        i, _, cur_mask, _ = state
-        not_max_len = i < max_length - init_seq_len
-        # Check if any sequence has not generated an EOS token
-        has_active = jnp.any(cur_mask.sum(axis=1) < max_length)
-        return jnp.logical_and(not_max_len, has_active)
+        not_max_len = state.i < max_length - init_seq_len
+        # TODO(finbarrtimbers): Add support to check if all the sequences are EOS.
+        return not_max_len
 
     # Initialize loop state
-    init_state = (0, output_tokens, attention_mask, key)
+    init_state = LoopState(init_seq_len, output_tokens, key)
 
     # Run the generation loop
     final_state = jax.lax.while_loop(cond_fn, generation_loop, init_state)
 
     # Return final output and attention mask
-    return final_state[1], final_state[2]
+    # TODO(finbarrtimbers): Include EOS in attention mask.
+    return final_state.tokens, attention_mask
 
 
 def generate_text(
@@ -159,20 +185,21 @@ def generate_text(
     key = jax.random.PRNGKey(seed)
 
     # Generate tokens
-    generated_ids, attention_mask = generate_tokens(
+    generated_ids, _ = generate_tokens(
         params=params,
         model=model,
         input_ids=input_ids,
         key=key,
-        max_length=max_length,
+        # We add one to account for <bos>.
+        max_length=max_length + 1,
         temperature=temperature,
         top_k=top_k,
         top_p=top_p,
     )
 
     # Extract valid tokens using attention mask
-    valid_tokens = generated_ids[0, : jnp.sum(attention_mask[0])]
-
-    # Decode generated tokens
-    generated_text = tokenizer.decode(valid_tokens)
+    generated_text = tokenizer.decode(generated_ids[0, 1:])
+    print(f"{generated_ids[0, 1:]=}\n{generated_text=}")
+    retokenized = tokenizer.encode(generated_text)
+    print(f"{generated_ids=}\n{retokenized=}")
     return generated_text

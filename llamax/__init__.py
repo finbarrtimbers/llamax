@@ -22,6 +22,6 @@ class ModelArgs:
 
 
 def make_causal_mask(seq_len: int) -> jnp.ndarray:
-    mask = jnp.full((seq_len, seq_len), float("-inf"))
+    mask = jnp.full((seq_len, seq_len), 1)
     mask = jnp.triu(mask, k=1)
     return mask
