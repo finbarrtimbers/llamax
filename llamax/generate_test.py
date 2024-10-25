@@ -17,6 +17,7 @@ class TestTextGeneration(unittest.TestCase):
     def setUpClass(cls):
         """Set up any necessary resources that will be shared across tests."""
         # Initialize tokenizer
+        print(f'{os.environ["HF_TOKEN"]=}')
         cls.tokenizer = transformers.AutoTokenizer.from_pretrained(
             "meta-llama/Llama-3.1-8B", token=os.environ["HF_TOKEN"]
         )
@@ -57,7 +58,6 @@ class TestTextGeneration(unittest.TestCase):
         )
 
         self.assertIsInstance(generated, str)
-        print(f"{generated=}, {self.test_prompt=}")
         self.assertTrue(generated.startswith(self.test_prompt))
 
     @unittest.skip("currently failing, as we're using bad, random, weights.")
@@ -208,7 +208,6 @@ class TestTextGeneration(unittest.TestCase):
         )
 
         # Generate batch with same sequence duplicated
-        print(f"{input_ids.shape=}")
         batch_input = jnp.tile(input_ids, (2, 1))
         output, _ = generate.generate_tokens(
             params=self.params,
@@ -291,7 +290,6 @@ class TestSamplingFunctions(unittest.TestCase):
         """Test with p=0.0 and p=1.0"""
         # With p=0.0, should keep only the highest value
         result_0 = generate.apply_top_p(self.basic_logits, p=0.0)
-        print(f"{result_0=}")
         self.assertEqual(jnp.sum(result_0 != float("-inf")), 1)
 
         # With p=1.0, should keep all values

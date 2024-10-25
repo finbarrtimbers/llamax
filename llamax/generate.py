@@ -198,8 +198,4 @@ def generate_text(
     )
 
     # Extract valid tokens using attention mask
-    generated_text = tokenizer.decode(generated_ids[0, 1:])
-    print(f"{generated_ids[0, 1:]=}\n{generated_text=}")
-    retokenized = tokenizer.encode(generated_text)
-    print(f"{generated_ids=}\n{retokenized=}")
-    return generated_text
+    return tokenizer.decode(generated_ids[0, 1:])
