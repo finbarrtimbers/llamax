@@ -1,11 +1,11 @@
-import dataclasses
+from flax import struct
 
 from typing import Optional
 
 import jax.numpy as jnp
 
 
-@dataclasses.dataclass
+@struct.dataclass
 class ModelArgs:
     dim: int = 4096
     n_layers: int = 32
@@ -22,6 +22,6 @@ class ModelArgs:
 
 
 def make_causal_mask(seq_len: int) -> jnp.ndarray:
-    mask = jnp.full((seq_len, seq_len), float("-inf"))
+    mask = jnp.full((seq_len, seq_len), 1)
     mask = jnp.triu(mask, k=1)
     return mask

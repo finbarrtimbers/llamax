@@ -2,6 +2,7 @@ import math
 from typing import Any, Dict, Optional, Tuple
 
 import jax
+import jax_dataclasses as jdc
 import jax.numpy as jnp
 import flax.linen as nn
 import dataclasses
@@ -126,7 +127,7 @@ class Attention(nn.Module):
 
         scores = jnp.matmul(xq, jnp.swapaxes(xk, -1, -2)) / math.sqrt(head_dim)
         if mask is not None:
-            scores = scores + mask
+            scores = scores + (mask * float("-inf"))
         scores = jax.nn.softmax(scores, axis=-1)
         output = jnp.matmul(scores, xv)
         output = jnp.transpose(output, (0, 2, 1, 3)).reshape(bsz, seqlen, -1)
@@ -223,7 +224,7 @@ def block_params_from_module(
 
 @dataclasses.dataclass
 class Transformer(nn.Module):
-    config: llamax.ModelArgs
+    config: jdc.Static[llamax.ModelArgs]
 
     @nn.compact
     def __call__(

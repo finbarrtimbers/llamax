@@ -1,0 +1,37 @@
+{
+    "name": "Python 3",
+    "image": "mcr.microsoft.com/devcontainers/python:0-3.11-bullseye",
+    "features": {
+        "ghcr.io/devcontainers-contrib/features/coverage-py:2": {}
+    },
+    "postCreateCommand": "pip3 install --user -r requirements.txt ruff pytest-xdist",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.analysis.extraPaths": [
+                    "/usr/local/py-utils/lib/python3.11/site-packages",
+                    "${workspaceFolder}/.venv/lib/python3.11/site-packages"
+                ],
+                "python.analysis.autoImportCompletions": true,
+                "python.analysis.indexing": true,
+                "python.linting.enabled": true,
+                "python.formatting.provider": "none",
+                "editor.formatOnSave": true,
+                "[python]": {
+                    "editor.defaultFormatter": "charliermarsh.ruff",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll.ruff": "always",
+                        "source.organizeImports.ruff": "always"
+                    }
+                }
+            }
+        }
+    }
+}
