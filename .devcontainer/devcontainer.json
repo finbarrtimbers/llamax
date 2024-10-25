@@ -4,7 +4,7 @@
     "features": {
         "ghcr.io/devcontainers-contrib/features/coverage-py:2": {}
     },
-    "postCreateCommand": "pip3 install --user -r requirements.txt ruff pytest-xdist && python3 -c 'import flax; import jax.numpy'",
+    "postCreateCommand": "pip3 install --user -r requirements.txt ruff pytest-xdist",
     "customizations": {
         "vscode": {
             "extensions": [
