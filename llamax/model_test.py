@@ -29,6 +29,9 @@ LLAMA_32_1B_CONFIG = llamax.ModelArgs(
     # use_scaled_rope=True,
 )
 
+# This is the number of params in Llama 3.2 1B.
+NUM_WEIGHTS = 1_498_482_688
+
 # These are all length 128 after the prompt, and
 KNOWN_TEXT = {
     "llama_3.2_1B": {
@@ -63,12 +66,6 @@ def assert_modules_output_same_code(
 
     # Check if outputs are equal within a small tolerance
     np.testing.assert_array_almost_equal(jax_output_np, torch_output_np)
-
-
-def count_leaves(tree) -> int:
-    return jnp.sum(
-        jnp.array(jax.tree.map(lambda x: jnp.prod(jnp.array(x.shape)), tree))
-    )
 
 
 class TestModelEquivalence(unittest.TestCase):
@@ -296,9 +293,17 @@ class IntegrationTests(unittest.TestCase):
             dict(torch_model.state_dict()),
             checkpoint,
         )
+
+        def count_leaves(tree) -> int:
+            shape_dict = jax.tree.map(lambda x: jnp.prod(jnp.array(x.shape)), tree)
+            return jnp.sum(jnp.array(list(shape_dict.values())))
+
         self.assertEqual(
             count_leaves(torch_model.state_dict()), count_leaves(checkpoint)
         )
+        self.assertEqual(count_leaves(checkpoint), NUM_WEIGHTS)
+        print(f"{count_leaves(checkpoint)=}")
+        torch_model.load_state_dict(checkpoint)
 
     def test_num_parameters_match(self):
         flax_model = model.Transformer(config=self.config)
@@ -307,8 +312,14 @@ class IntegrationTests(unittest.TestCase):
         )
         mask = llamax.make_causal_mask(SEQ_LEN)
         params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos=0, mask=mask)
-        num_params = count_leaves(params)
-        self.assertEqual(num_params, 1235814400)
+        num_params = jnp.sum(
+            jnp.array(
+                jax.tree.map(
+                    lambda x: jnp.prod(jnp.array(x.shape)), jax.tree.flatten(params)[0]
+                )
+            )
+        )
+        self.assertEqual(num_params, NUM_WEIGHTS)
 
 
 if __name__ == "__main__":
