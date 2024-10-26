@@ -25,4 +25,12 @@ The code is very much a work in-progress; use at your own risk.
 
 ## Usage
 
-Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`.
+Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`. Get your Huggingface token by following [their instructions](https://huggingface.co/docs/hub/en/security-tokens).
+
+
+### Weights
+
+I don't include any of the weights needed to test the implementations. You'll
+ need to get them yourself. Here's where I got them:
+
+1. **Llama 3.2 1B**: Copy the "original" folder from [Huggingface](https://huggingface.co/meta-llama/Llama-3.2-1B/tree/main/original).

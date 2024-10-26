@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+llama-3.2-1B/
 environment.sh
 
 # C extensions

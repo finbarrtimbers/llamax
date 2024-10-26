@@ -1,15 +1,14 @@
 import unittest
-from parameterized import parameterized
-import jax
-import jax.numpy as jnp
-import torch
-import numpy as np
-
-import llamax
-from llamax import model
-from llamax import reference_model_torch
 
 import flax.linen as nn
+import jax
+import jax.numpy as jnp
+import numpy as np
+import torch
+from parameterized import parameterized
+
+import llamax
+from llamax import model, reference_model_torch
 
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
     vocab_size=1_000,
@@ -17,6 +16,28 @@ SMALL_MODEL_CONFIG = llamax.ModelArgs(
     n_layers=1,
     n_heads=4,
 )
+LLAMA_32_1B_CONFIG = llamax.ModelArgs(
+    dim=2048,
+    ffn_dim_multiplier=1.5,
+    multiple_of=256,
+    n_heads=32,
+    n_kv_heads=8,
+    n_layers=16,
+    vocab_size=128256,
+    norm_eps=1e-5,
+    # use_scaled_rope=True,
+)
+
+# These are all length 128 after the prompt, and
+KNOWN_TEXT = {
+    "llama_3.2_1B": {
+        "Hello, world!": (
+            " I’m a 20-something year old who loves to write. I’m a huge fan "
+            "of the Harry Potter series, and I’m also a huge fan"
+        ),
+    }
+}
+
 
 # We use numbers that are mutually prime and >1 to ensure no weirdness.
 BATCH_SIZE = 2
@@ -239,6 +260,36 @@ class TestModelEquivalence(unittest.TestCase):
         torch_grad_np = self.torch_model.layer1.weight.grad.numpy()
 
         np.testing.assert_allclose(jax_grad_np, torch_grad_np, rtol=1e-5, atol=1e-5)
+
+
+class IntegrationTests(unittest.TestCase):
+    def setUp(self):
+        # Set both JAX and PyTorch to use CPU
+        jax.config.update("jax_platform_name", "cpu")
+
+        # Set random seed for reproducibility
+        np.random.seed(42)
+        torch.manual_seed(42)
+        self.config = LLAMA_32_1B_CONFIG
+        self.freqs = model.precompute_freqs_cis(
+            dim=self.config.dim // self.config.n_heads,
+            end=self.config.max_seq_len * 2,
+            theta=self.config.rope_theta,
+        )
+
+    def test_num_parameters_match(self):
+        checkpoint = torch.load(
+            "llama-3.2-1B/consolidated.00.pth", map_location="cpu", weights_only=True
+        )
+        print(f"{checkpoint=}")
+        flax_model = model.Transformer(config=self.config)
+        inputs = np.random.randint(
+            0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN)
+        )
+        mask = llamax.make_causal_mask(SEQ_LEN)
+        params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos=0, mask=mask)
+        num_params = jnp.sum(jax.tree.map(lambda x: jnp.prod(x.shape), params))
+        self.assertEqual(num_params, 1235814400)
 
 
 if __name__ == "__main__":
