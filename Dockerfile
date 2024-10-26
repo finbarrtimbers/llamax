@@ -17,4 +17,7 @@ RUN pip install -r requirements.txt
 # Copy your Python files into the container
 COPY . .
 
-WORKDIR llamax
+# Add these debug lines
+RUN python -c "import sys; print(sys.path)"
+RUN ls -la /app
+RUN pip list

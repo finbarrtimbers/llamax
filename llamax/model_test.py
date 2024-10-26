@@ -1,4 +1,5 @@
 import unittest
+import llamax
 
 import flax.linen as nn
 import jax
@@ -7,8 +8,8 @@ import numpy as np
 import torch
 from parameterized import parameterized
 
-import llamax
-from llamax import model, reference_model_torch
+from llamax import model
+from llamax import reference_model_torch
 
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
     vocab_size=1_000,
@@ -62,6 +63,12 @@ def assert_modules_output_same_code(
 
     # Check if outputs are equal within a small tolerance
     np.testing.assert_array_almost_equal(jax_output_np, torch_output_np)
+
+
+def count_leaves(tree) -> int:
+    return jnp.sum(
+        jnp.array(jax.tree.map(lambda x: jnp.prod(jnp.array(x.shape)), tree))
+    )
 
 
 class TestModelEquivalence(unittest.TestCase):
@@ -277,18 +284,30 @@ class IntegrationTests(unittest.TestCase):
             theta=self.config.rope_theta,
         )
 
-    def test_num_parameters_match(self):
+    def test_checkpoint_matches_torch(self):
+        torch_model = reference_model_torch.Transformer(self.config)
         checkpoint = torch.load(
-            "llama-3.2-1B/consolidated.00.pth", map_location="cpu", weights_only=True
+            "/data/llama-3.2-1B/consolidated.00.pth",
+            map_location="cpu",
+            weights_only=True,
         )
-        print(f"{checkpoint=}")
+        jax.tree.map(
+            lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
+            dict(torch_model.state_dict()),
+            checkpoint,
+        )
+        self.assertEqual(
+            count_leaves(torch_model.state_dict()), count_leaves(checkpoint)
+        )
+
+    def test_num_parameters_match(self):
         flax_model = model.Transformer(config=self.config)
         inputs = np.random.randint(
             0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN)
         )
         mask = llamax.make_causal_mask(SEQ_LEN)
         params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos=0, mask=mask)
-        num_params = jnp.sum(jax.tree.map(lambda x: jnp.prod(x.shape), params))
+        num_params = count_leaves(params)
         self.assertEqual(num_params, 1235814400)
 
 
