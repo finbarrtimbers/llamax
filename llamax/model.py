@@ -127,7 +127,7 @@ class Attention(nn.Module):
 
         scores = jnp.matmul(xq, jnp.swapaxes(xk, -1, -2)) / math.sqrt(head_dim)
         if mask is not None:
-            scores = scores + (mask * float("-inf"))
+            scores = jnp.where(mask, float("-inf"), scores)
         scores = jax.nn.softmax(scores, axis=-1)
         output = jnp.matmul(scores, xv)
         output = jnp.transpose(output, (0, 2, 1, 3)).reshape(bsz, seqlen, -1)
@@ -205,8 +205,9 @@ class TransformerBlock(nn.Module):
         )
         attention_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
         ffn_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
-
+        return attention(attention_norm(x), start_pos, freqs_cis, mask)
         h = x + attention(attention_norm(x), start_pos, freqs_cis, mask)
+        return h
         out = h + feed_forward(ffn_norm(h))
         return out
 
@@ -242,13 +243,15 @@ class Transformer(nn.Module):
         freqs_cis = jax.lax.dynamic_slice_in_dim(
             freqs_cis, start_pos, tokens.shape[1], axis=0
         )
-
+        return TransformerBlock(layer_id=0, config=self.config)(
+            h, start_pos, freqs_cis, mask
+        )
         for layer_id in range(self.config.n_layers):
             h = TransformerBlock(
                 layer_id=layer_id,
                 config=self.config,
             )(h, start_pos, freqs_cis, mask)
-
+        return h
         h = RMSNorm(self.config.dim, eps=self.config.norm_eps)(h)
         output = nn.Dense(features=self.config.vocab_size, use_bias=False)(h)
         return output

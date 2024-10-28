@@ -158,8 +158,8 @@ class Attention(nn.Module):
         )  # (bs, n_local_heads, cache_len + seqlen, head_dim)
         scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
         if mask is not None:
-            scores = scores + (
-                float("-inf") * mask
+            scores = torch.where(
+                mask, float("-inf"), scores
             )  # (bs, n_local_heads, seqlen, cache_len + seqlen)
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
         output = torch.matmul(scores, values)  # (bs, n_local_heads, seqlen, head_dim)
@@ -226,7 +226,9 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
     ):
+        return self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
         h = x + self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
+        return h
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
@@ -280,9 +282,10 @@ class Transformer(nn.Module):
                 mask = torch.hstack(
                     [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
                 ).type_as(h)
-
+        return self.layers[0](h, start_pos, freqs_cis, mask)
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)
+        return h
         h = self.norm(h)
         output = self.output(h).float()
         return output
