@@ -306,7 +306,7 @@ class IntegrationTests(unittest.TestCase):
         )
         mask = llamax.make_causal_mask(SEQ_LEN)
         torch_logits = self.torch_model(
-            torch.from_numpy(inputs).double(),
+            torch.from_numpy(inputs),
             start_pos=0,
             mask=torch.from_numpy(np.array(mask, copy=True)),
         )

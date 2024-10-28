@@ -240,9 +240,9 @@ class Transformer(nn.Module):
         freqs_cis = jax.lax.dynamic_slice_in_dim(
             freqs_cis, start_pos, tokens.shape[1], axis=0
         )
-        #return TransformerBlock(layer_id=0, config=self.config)(
+        # return TransformerBlock(layer_id=0, config=self.config)(
         #    h, start_pos, freqs_cis, mask
-        #)
+        # )
         for layer_id in range(self.config.n_layers):
             h = TransformerBlock(
                 layer_id=layer_id,
