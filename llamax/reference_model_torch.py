@@ -127,21 +127,19 @@ class Attention(nn.Module):
     ):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
-
         xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
-
         self.cache_k = self.cache_k.to(xq)
         self.cache_v = self.cache_v.to(xq)
 
         self.cache_k[:bsz, start_pos : start_pos + seqlen] = xk
         self.cache_v[:bsz, start_pos : start_pos + seqlen] = xv
-
         keys = self.cache_k[:bsz, : start_pos + seqlen]
         values = self.cache_v[:bsz, : start_pos + seqlen]
+        mse = torch.mean((keys - xk) ** 2)
 
         # repeat k/v heads if n_kv_heads < n_heads
         keys = repeat_kv(
@@ -226,9 +224,7 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
     ):
-        return self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
         h = x + self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
-        return h
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
@@ -282,10 +278,8 @@ class Transformer(nn.Module):
                 mask = torch.hstack(
                     [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
                 ).type_as(h)
-        return self.layers[0](h, start_pos, freqs_cis, mask)
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)
-        return h
         h = self.norm(h)
         output = self.output(h).float()
         return output

@@ -76,7 +76,7 @@ def repeat_kv(x: jnp.ndarray, n_rep: int) -> jnp.ndarray:
     bs, slen, n_kv_heads, head_dim = x.shape
     if n_rep == 1:
         return x
-    return jnp.repeat(x[:, :, None, :, :], n_rep, axis=2).reshape(
+    return jnp.repeat(x[:, :, :, None, :], n_rep, axis=2).reshape(
         bs, slen, n_kv_heads * n_rep, head_dim
     )
 
@@ -124,11 +124,10 @@ class Attention(nn.Module):
         xq = jnp.transpose(xq, (0, 2, 1, 3))
         xk = jnp.transpose(xk, (0, 2, 1, 3))
         xv = jnp.transpose(xv, (0, 2, 1, 3))
-
         scores = jnp.matmul(xq, jnp.swapaxes(xk, -1, -2)) / math.sqrt(head_dim)
         if mask is not None:
             scores = jnp.where(mask, float("-inf"), scores)
-        scores = jax.nn.softmax(scores, axis=-1)
+        scores = jax.nn.softmax(scores.astype(jnp.float32), axis=-1).astype(xq.dtype)
         output = jnp.matmul(scores, xv)
         output = jnp.transpose(output, (0, 2, 1, 3)).reshape(bsz, seqlen, -1)
         return wo(output)
@@ -205,9 +204,7 @@ class TransformerBlock(nn.Module):
         )
         attention_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
         ffn_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
-        return attention(attention_norm(x), start_pos, freqs_cis, mask)
         h = x + attention(attention_norm(x), start_pos, freqs_cis, mask)
-        return h
         out = h + feed_forward(ffn_norm(h))
         return out
 
@@ -243,15 +240,14 @@ class Transformer(nn.Module):
         freqs_cis = jax.lax.dynamic_slice_in_dim(
             freqs_cis, start_pos, tokens.shape[1], axis=0
         )
-        return TransformerBlock(layer_id=0, config=self.config)(
-            h, start_pos, freqs_cis, mask
-        )
+        #return TransformerBlock(layer_id=0, config=self.config)(
+        #    h, start_pos, freqs_cis, mask
+        #)
         for layer_id in range(self.config.n_layers):
             h = TransformerBlock(
                 layer_id=layer_id,
                 config=self.config,
             )(h, start_pos, freqs_cis, mask)
-        return h
         h = RMSNorm(self.config.dim, eps=self.config.norm_eps)(h)
         output = nn.Dense(features=self.config.vocab_size, use_bias=False)(h)
         return output

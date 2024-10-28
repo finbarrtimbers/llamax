@@ -295,6 +295,7 @@ class IntegrationTests(unittest.TestCase):
             checkpoint,
         )
         self.torch_model.load_state_dict(checkpoint)
+        self.torch_model.double()
         self.params = model.transformer_params_from_module(self.torch_model)
         flax_model = model.Transformer(self.config)
         self.apply_fn = jax.jit(flax_model.apply)
@@ -305,7 +306,7 @@ class IntegrationTests(unittest.TestCase):
         )
         mask = llamax.make_causal_mask(SEQ_LEN)
         torch_logits = self.torch_model(
-            torch.from_numpy(inputs),
+            torch.from_numpy(inputs).double(),
             start_pos=0,
             mask=torch.from_numpy(np.array(mask, copy=True)),
         )
