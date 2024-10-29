@@ -67,8 +67,8 @@ def apply_rotary_emb(
     xq_out = xq_complex * freqs_cis
     xk_out = xk_complex * freqs_cis
 
-    xq_out = jnp.stack([jnp.real(xq_out), jnp.imag(xq_out)], axis=-1).reshape(xq.shape)
-    xk_out = jnp.stack([jnp.real(xk_out), jnp.imag(xk_out)], axis=-1).reshape(xk.shape)
+    xq_out = jnp.stack([xq_out.real, xq_out.imag], axis=-1).reshape(xq.shape)
+    xk_out = jnp.stack([xk_out.real, xk_out.imag], axis=-1).reshape(xk.shape)
     return xq_out.astype(xq.dtype), xk_out.astype(xk.dtype)
 
 
@@ -240,9 +240,6 @@ class Transformer(nn.Module):
         freqs_cis = jax.lax.dynamic_slice_in_dim(
             freqs_cis, start_pos, tokens.shape[1], axis=0
         )
-        # return TransformerBlock(layer_id=0, config=self.config)(
-        #    h, start_pos, freqs_cis, mask
-        # )
         for layer_id in range(self.config.n_layers):
             h = TransformerBlock(
                 layer_id=layer_id,
