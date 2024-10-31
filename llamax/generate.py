@@ -114,7 +114,7 @@ def generate_tokens(
 
         # Apply top-k and top-p filtering
         logits = apply_top_k(logits, top_k=top_k)
-        
+
         # Sample from the modified distribution
         next_token = jax.random.categorical(key, logits, axis=-1)
         return next_token
