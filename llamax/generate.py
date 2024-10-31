@@ -52,8 +52,7 @@ def apply_top_k(logits: jax.Array, *, top_k: int) -> jax.Array:
 
 
 @ft.partial(jax.jit, static_argnames=["p"])
-def apply_top_p(logits: jax.Array, *, p: int, temperature: float = 1.0) -> jax.Array:
-    logits = logits / temperature
+def apply_top_p(logits: jax.Array, *, p: float) -> jax.Array:
     sorted_logits, sorted_indices = jax.lax.top_k(logits, logits.shape[-1])
     probs = jax.nn.softmax(sorted_logits)
     cumulative_probs = jnp.cumsum(probs, axis=-1)
@@ -65,13 +64,6 @@ def apply_top_p(logits: jax.Array, *, p: int, temperature: float = 1.0) -> jax.A
     offset_indices = sorted_indices + offset
     original_mask = jnp.take(mask, offset_indices)
     return jnp.where(original_mask, logits, float("-inf"))
-
-
-def mock_while_loop(cond_fun, body_fun, init_val):
-    val = init_val
-    while cond_fun(val):
-        val = body_fun(val)
-    return val
 
 
 @ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k", "top_p"))
@@ -120,15 +112,14 @@ def generate_tokens(
     ) -> jax.Array:
         """Sample next token from logits with temperature and optional top-k/p."""
         # Apply temperature
-        # logits = logits / jnp.maximum(temperature, 1e-6)
+        logits = logits / jnp.maximum(temperature, 1e-6)
 
         # Apply top-k and top-p filtering
-        # logits = apply_top_k(logits, top_k=top_k)
-        # logits = apply_top_p(logits, p=top_p)
+        logits = apply_top_k(logits, top_k=top_k)
+        #logits = apply_top_p(logits, p=top_p)
 
         # Sample from the modified distribution
-        # next_token = jax.random.categorical(key, logits, axis=-1)
-        next_token = jnp.argmax(logits, axis=-1)
+        next_token = jax.random.categorical(key, logits, axis=-1)
         return next_token
 
     def generation_loop(state):
