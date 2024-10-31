@@ -87,7 +87,8 @@ class IntegrationTests(unittest.TestCase):
         self.model = "meta-llama/Llama-3.1-8B"
         assert self.model in KNOWN_TEXT and self.prompt in KNOWN_TEXT[self.model]
         self.tokenizer = transformers.AutoTokenizer.from_pretrained(
-            self.model, token=os.environ["HF_TOKEN"])
+            self.model, token=os.environ["HF_TOKEN"]
+        )
 
         # Set random seed for reproducibility
         self.seed = 42
@@ -148,14 +149,13 @@ class IntegrationTests(unittest.TestCase):
         torch_argmax = jnp.argmax(torch_logits, axis=-1)
         flax_argmax = jnp.argmax(flax_logits, axis=-1)
         np.testing.assert_array_equal(torch_argmax, flax_argmax)
-        
+
         # First, we check that both tensors have no nans/infs
         self.assertTrue(np.isfinite(torch_logits).all())
         self.assertTrue(np.isfinite(flax_logits).all())
 
         # Fails at 6 decimal points with float64, passes at 5.
-        np.testing.assert_array_almost_equal(torch_logits, flax_logits,
-                                             decimal=5)
+        np.testing.assert_array_almost_equal(torch_logits, flax_logits, decimal=5)
 
     def test_known_text_generation(self):
         """Test that the model generates expected tokens for known prompts."""
@@ -165,9 +165,10 @@ class IntegrationTests(unittest.TestCase):
             tokenizer=self.tokenizer,
             prompt=self.prompt,
             max_length=32,
-            temperature=0.,
-            seed=self.seed)
-        self.assertEqual(text, self.prompt + KNOWN_TEXT[self.model][self.prompt])        
+            temperature=0.0,
+            seed=self.seed,
+        )
+        self.assertEqual(text, self.prompt + KNOWN_TEXT[self.model][self.prompt])
 
     @unittest.skip("This is slow so we don't run it by default.")
     def test_checkpoint_matches_torch(self):

@@ -68,10 +68,10 @@ def apply_top_p(logits: jax.Array, *, p: int, temperature: float = 1.0) -> jax.A
 
 
 def mock_while_loop(cond_fun, body_fun, init_val):
-  val = init_val
-  while cond_fun(val):
-    val = body_fun(val)
-  return val
+    val = init_val
+    while cond_fun(val):
+        val = body_fun(val)
+    return val
 
 
 @ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k", "top_p"))
@@ -102,8 +102,6 @@ def generate_tokens(
         Generated token arrays with shape (batch_size, max_length) and type jnp.int32.
     """
     batch_size, init_seq_len = input_ids.shape
-    jax.debug.print('start of function, input_ids: {}, init_seq_len: {}', input_ids,
-                    init_seq_len)
 
     # Initialize output arrays
     output_tokens = jnp.zeros((batch_size, max_length), dtype=jnp.int32)
@@ -122,21 +120,20 @@ def generate_tokens(
     ) -> jax.Array:
         """Sample next token from logits with temperature and optional top-k/p."""
         # Apply temperature
-        #logits = logits / jnp.maximum(temperature, 1e-6)
+        # logits = logits / jnp.maximum(temperature, 1e-6)
 
         # Apply top-k and top-p filtering
-        #logits = apply_top_k(logits, top_k=top_k)
-        #logits = apply_top_p(logits, p=top_p)
+        # logits = apply_top_k(logits, top_k=top_k)
+        # logits = apply_top_p(logits, p=top_p)
 
         # Sample from the modified distribution
-        #next_token = jax.random.categorical(key, logits, axis=-1)
+        # next_token = jax.random.categorical(key, logits, axis=-1)
         next_token = jnp.argmax(logits, axis=-1)
         return next_token
 
     def generation_loop(state):
         """Single step of the generation loop."""
         # Get model output for current sequence
-        jax.debug.print('start of loop')
         outputs = model.apply(
             params,
             state.tokens,
@@ -146,25 +143,19 @@ def generate_tokens(
             # Causality will mask out the problematic outputs.
             attention_mask,
         )
-        argmaxes = jnp.argmax(outputs, axis=-1)
-        jax.debug.print('tokens: {}, state.i: {}\nargmaxes: {}, argmaxes[state.i]: {}', state.tokens,
-                        state.i, argmaxes, argmaxes[:, state.i])
         next_token_logits = outputs[:, state.i, :]
-        jax.debug.print('next_token_logits_argmax: {}', jnp.argmax(next_token_logits, axis=-1))
 
         # Sample next token
         cur_key, sample_key = jax.random.split(state.key)
         next_token = sample_token(next_token_logits, temperature, sample_key)
 
         # Update output arrays
-        tokens = state.tokens.at[:, state.i+1].set(next_token)
-        jax.debug.print('state.i: {}, next_token: {}', state.i, next_token, ordered=True)
+        tokens = state.tokens.at[:, state.i + 1].set(next_token)
         return LoopState(state.i + 1, tokens, cur_key)
 
     def cond_fn(state):
         """Condition for continuing generation."""
         not_max_len = state.i < max_length
-        jax.debug.print('state: {}', state)
         # TODO(finbarrtimbers): Add support to check if all the sequences are EOS.
         return not_max_len
 
@@ -173,7 +164,7 @@ def generate_tokens(
 
     # Run the generation loop
     final_state = jax.lax.while_loop(cond_fn, generation_loop, init_state)
-    
+
     # Return final output and attention mask
     # TODO(finbarrtimbers): Include EOS in attention mask.
     return final_state.tokens, attention_mask
@@ -214,60 +205,51 @@ def generate_text(
     )
     generated_ids.block_until_ready()
     jax.effects_barrier()
-    
+
     # Extract valid tokens using attention mask
     return tokenizer.decode(generated_ids[0, 1:])
+
 
 def generate_tokens_naive(model, start_tokens, max_length=100, temperature=1.0):
     """
     Generate text using batched sampling with JAX.
-    
+
     Args:
         model: The language model
-        start_tokens: Initial token ids with shape [batch_size, seq_len] 
+        start_tokens: Initial token ids with shape [batch_size, seq_len]
         max_length: Maximum sequence length to generate
         temperature: Sampling temperature (higher = more random)
-    
+
     Returns:
         Generated token sequences with shape [batch_size, max_length]
     """
     # Convert to jax array if not already
     current_tokens = jnp.array(start_tokens)
     batch_size = current_tokens.shape[0]
-    
+
     for _ in range(max_length - current_tokens.shape[1]):
         # Create causal mask for current sequence
         mask = llamax.make_causal_mask(current_tokens.shape[1])
-        
+
         # Get logits from model [batch_size, seq_len, vocab_size]
-        logits = model.apply_fn(
-            model.params,
-            current_tokens,
-            start_pos=0,
-            mask=mask
-        )
-        
+        logits = model.apply_fn(model.params, current_tokens, start_pos=0, mask=mask)
+
         # Get logits for next token prediction [batch_size, vocab_size]
         next_token_logits = logits[:, -1, :]
-        
+
         # Apply temperature
         if temperature != 1.0:
             next_token_logits = next_token_logits / temperature
-            
+
         # Convert to probabilities [batch_size, vocab_size]
         probs = jax.nn.softmax(next_token_logits, axis=-1)
-        
+
         # Sample from the distributions
         next_tokens = jax.random.categorical(
-            jax.random.PRNGKey(0), 
-            probs, 
-            shape=(batch_size,)
+            jax.random.PRNGKey(0), probs, shape=(batch_size,)
         )
-        
+
         # Append to sequences [batch_size, seq_len + 1]
-        current_tokens = jnp.concatenate(
-            [current_tokens, next_tokens[:, None]], 
-            axis=1
-        )
-    
+        current_tokens = jnp.concatenate([current_tokens, next_tokens[:, None]], axis=1)
+
     return current_tokens
