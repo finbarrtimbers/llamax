@@ -66,7 +66,7 @@ def apply_top_p(logits: jax.Array, *, p: float) -> jax.Array:
     return jnp.where(original_mask, logits, float("-inf"))
 
 
-@ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k", "top_p"))
+@ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k"))
 def generate_tokens(
     params: Dict,
     model: nn.Module,
@@ -75,7 +75,6 @@ def generate_tokens(
     max_length: int = 100,
     temperature: float = 1.0,
     top_k: Optional[int] = 50,
-    top_p: Optional[float] = 0.9,
 ) -> Tuple[jax.Array, jax.Array]:
     """
     JIT-compiled function for text generation using JAX structured control flow.
@@ -88,7 +87,6 @@ def generate_tokens(
         max_length: Maximum length of generated sequence
         temperature: Sampling temperature
         top_k: Number of highest probability tokens to consider
-        top_p: Cumulative probability cutoff for nucleus sampling
 
     Returns:
         Generated token arrays with shape (batch_size, max_length) and type jnp.int32.
@@ -116,8 +114,7 @@ def generate_tokens(
 
         # Apply top-k and top-p filtering
         logits = apply_top_k(logits, top_k=top_k)
-        #logits = apply_top_p(logits, p=top_p)
-
+        
         # Sample from the modified distribution
         next_token = jax.random.categorical(key, logits, axis=-1)
         return next_token
@@ -169,7 +166,6 @@ def generate_text(
     max_length: int = 100,
     temperature: float = 1.0,
     top_k: Optional[int] = 50,
-    top_p: Optional[float] = 0.9,
     seed: int = 42,
 ) -> str:
     """
@@ -192,55 +188,9 @@ def generate_text(
         max_length=input_ids.shape[-1] + max_length + 1,
         temperature=temperature,
         top_k=top_k,
-        top_p=top_p,
     )
     generated_ids.block_until_ready()
     jax.effects_barrier()
 
     # Extract valid tokens using attention mask
     return tokenizer.decode(generated_ids[0, 1:])
-
-
-def generate_tokens_naive(model, start_tokens, max_length=100, temperature=1.0):
-    """
-    Generate text using batched sampling with JAX.
-
-    Args:
-        model: The language model
-        start_tokens: Initial token ids with shape [batch_size, seq_len]
-        max_length: Maximum sequence length to generate
-        temperature: Sampling temperature (higher = more random)
-
-    Returns:
-        Generated token sequences with shape [batch_size, max_length]
-    """
-    # Convert to jax array if not already
-    current_tokens = jnp.array(start_tokens)
-    batch_size = current_tokens.shape[0]
-
-    for _ in range(max_length - current_tokens.shape[1]):
-        # Create causal mask for current sequence
-        mask = llamax.make_causal_mask(current_tokens.shape[1])
-
-        # Get logits from model [batch_size, seq_len, vocab_size]
-        logits = model.apply_fn(model.params, current_tokens, start_pos=0, mask=mask)
-
-        # Get logits for next token prediction [batch_size, vocab_size]
-        next_token_logits = logits[:, -1, :]
-
-        # Apply temperature
-        if temperature != 1.0:
-            next_token_logits = next_token_logits / temperature
-
-        # Convert to probabilities [batch_size, vocab_size]
-        probs = jax.nn.softmax(next_token_logits, axis=-1)
-
-        # Sample from the distributions
-        next_tokens = jax.random.categorical(
-            jax.random.PRNGKey(0), probs, shape=(batch_size,)
-        )
-
-        # Append to sequences [batch_size, seq_len + 1]
-        current_tokens = jnp.concatenate([current_tokens, next_tokens[:, None]], axis=1)
-
-    return current_tokens
