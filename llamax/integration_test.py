@@ -2,17 +2,23 @@ import unittest
 import llamax
 
 import flax.linen as nn
+import functools
 import jax
 import jax.numpy as jnp
 import numpy as np
 import os
 
+import time
 import transformers
 import torch
 
 from llamax import generate
 from llamax import model
 from llamax import reference_model_torch
+
+import psutil
+import gc
+
 
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
     vocab_size=1_000,
@@ -76,39 +82,48 @@ def assert_modules_output_same_code(
     np.testing.assert_array_almost_equal(jax_output_np, torch_output_np)
 
 
-class IntegrationTests(unittest.TestCase):
-    def setUp(self):
-        # Set both JAX and PyTorch to use CPU
-        jax.config.update("jax_platform_name", "cpu")
-        # Enable float64 precision in JAX
-        jax.config.update("jax_enable_x64", True)
+# We intentionally don't support this in Github CI. You'll have to download this
+# locally and modify the docker command accordingly.
+CHECKPOINT_PATH = "/data/llama-3.2-1B/consolidated.00.pth"
 
-        self.prompt = "Hello, world!"
-        self.model = "meta-llama/Llama-3.1-8B"
-        assert self.model in KNOWN_TEXT and self.prompt in KNOWN_TEXT[self.model]
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(
-            self.model, token=os.environ["HF_TOKEN"]
+
+def checkpoint_exists():
+    return os.path.isfile(CHECKPOINT_PATH)
+
+
+class IntegrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Without the checkpoint, we're not testing anything, so exit early.
+        if not checkpoint_exists():
+            return
+
+        cls.prompt = "Hello, world!"
+        cls.model = "meta-llama/Llama-3.1-8B"
+        cls.tokenizer = transformers.AutoTokenizer.from_pretrained(
+            cls.model, token=os.environ["HF_TOKEN"]
         )
 
         # Set random seed for reproducibility
-        self.seed = 42
-        np.random.seed(self.seed)
-        torch.manual_seed(self.seed)
+        cls.seed = 42
+        np.random.seed(cls.seed)
+        torch.manual_seed(cls.seed)
 
-        self.config = LLAMA_32_1B_CONFIG
+        cls.config = LLAMA_32_1B_CONFIG
+
         # Ensure freqs computation is in float64
-        self.freqs = jnp.array(
+        cls.freqs = jnp.array(
             model.precompute_freqs_cis(
-                dim=self.config.dim // self.config.n_heads,
-                end=self.config.max_seq_len * 2,
-                theta=self.config.rope_theta,
+                dim=cls.config.dim // cls.config.n_heads,
+                end=cls.config.max_seq_len * 2,
+                theta=cls.config.rope_theta,
             ),
             dtype=jnp.float64,
         )
 
-        self.torch_model = reference_model_torch.Transformer(self.config)
+        cls.torch_model = reference_model_torch.Transformer(cls.config)
         checkpoint = torch.load(
-            "/data/llama-3.2-1B/consolidated.00.pth",
+            CHECKPOINT_PATH,
             map_location="cpu",
             weights_only=True,
         )
@@ -118,18 +133,23 @@ class IntegrationTests(unittest.TestCase):
 
         jax.tree.map(
             lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
-            dict(self.torch_model.state_dict()),
+            dict(cls.torch_model.state_dict()),
             checkpoint,
         )
-        self.torch_model.load_state_dict(checkpoint)
-        self.torch_model.double()  # Ensure model is in double precision
+        cls.torch_model.load_state_dict(checkpoint)
+        cls.torch_model.double()  # Ensure model is in double precision
 
         # Convert params to float64
-        self.params = model.transformer_params_from_module(self.torch_model)
+        cls.params = model.transformer_params_from_module(cls.torch_model)
 
-        self.flax_model = model.Transformer(self.config)
-        self.apply_fn = jax.jit(self.flax_model.apply)
+        cls.flax_model = model.Transformer(cls.config)
 
+    def tearDown(self):
+        # Explicitly clear any cached computations and release memory
+        jax.clear_caches()
+        gc.collect()
+
+    @unittest.skipIf(not checkpoint_exists(), "checkpoint doesn't exist")
     def test_logits_match(self):
         inputs = np.random.randint(
             0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN)
@@ -144,7 +164,12 @@ class IntegrationTests(unittest.TestCase):
         )
         torch_logits = np.array(torch_logits, dtype=np.float64, copy=True)
 
-        flax_logits = self.apply_fn(self.params, inputs, start_pos=0, mask=mask)
+        # Jitting here doesn't offer any performance benefits, of course, but
+        # we want to test the jitted behaviour, as we don't (really) care about
+        # the un-jitted behaviour.
+        flax_logits = jax.jit(self.flax_model.apply)(
+            self.params, inputs, start_pos=0, mask=mask
+        )
 
         torch_argmax = jnp.argmax(torch_logits, axis=-1)
         flax_argmax = jnp.argmax(flax_logits, axis=-1)
@@ -157,6 +182,7 @@ class IntegrationTests(unittest.TestCase):
         # Fails at 6 decimal points with float64, passes at 5.
         np.testing.assert_array_almost_equal(torch_logits, flax_logits, decimal=5)
 
+    @unittest.skipIf(not checkpoint_exists(), "checkpoint doesn't exist")
     def test_known_text_generation(self):
         """Test that the model generates expected tokens for known prompts."""
         text = generate.generate_text(
@@ -203,28 +229,12 @@ class IntegrationTests(unittest.TestCase):
         torch_model.load_state_dict(checkpoint)
 
     def test_num_parameters_match(self):
-        flax_model = model.Transformer(config=self.config)
-        inputs = np.random.randint(
-            0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN)
-        )
-        mask = llamax.make_causal_mask(SEQ_LEN).astype(jnp.float64)
-
-        # Initialize with float64 precision
-        params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos=0, mask=mask)
-        params = jax.tree.map(
-            lambda x: x.astype(jnp.float64)
-            if isinstance(x, (np.ndarray, jnp.ndarray))
-            else x,
-            params,
-        )
-
         num_params = jnp.sum(
             jnp.array(
                 jax.tree.map(
-                    lambda x: jnp.prod(jnp.array(x.shape, dtype=jnp.float64)),
-                    jax.tree.flatten(params)[0],
-                ),
-                dtype=jnp.float64,
+                    lambda x: x.size,
+                    jax.tree.flatten(self.params)[0],
+                )
             )
         )
         self.assertEqual(num_params, NUM_WEIGHTS)

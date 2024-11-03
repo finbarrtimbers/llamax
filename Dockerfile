@@ -11,13 +11,6 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt .
 
-# Install Python dependencies (CPU versions)
 RUN pip install -r requirements.txt
 
-# Copy your Python files into the container
 COPY . .
-
-# Add these debug lines
-RUN python -c "import sys; print(sys.path)"
-RUN ls -la /app
-RUN pip list
