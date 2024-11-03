@@ -35,7 +35,7 @@ LLAMA_32_1B_CONFIG = llamax.ModelArgs(
     # use_scaled_rope=True,
 )
 
-# This is the number of params in Llama 3.2 1B.
+# This is the number of params in Llama 3.2 1B, from Huggingface.
 NUM_WEIGHTS = 1_498_482_688
 MAX_LENGTH = 32
 
@@ -91,10 +91,6 @@ def checkpoint_exists():
 class IntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Without the checkpoint, we're not testing anything, so exit early.
-        if not checkpoint_exists():
-            return
-
         cls.prompt = "Hello, world!"
         cls.model = "meta-llama/Llama-3.1-8B"
         cls.tokenizer = transformers.AutoTokenizer.from_pretrained(
@@ -119,26 +115,29 @@ class IntegrationTests(unittest.TestCase):
         )
 
         cls.torch_model = reference_model_torch.Transformer(cls.config)
-        checkpoint = torch.load(
-            CHECKPOINT_PATH,
-            map_location="cpu",
-            weights_only=True,
-        )
 
-        # Convert checkpoint to double precision
-        checkpoint = {k: v.double() for k, v in checkpoint.items()}
+        if checkpoint_exists():
+            checkpoint = torch.load(
+                CHECKPOINT_PATH,
+                map_location="cpu",
+                weights_only=True,
+            )
 
-        jax.tree.map(
-            lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
-            dict(cls.torch_model.state_dict()),
-            checkpoint,
-        )
-        cls.torch_model.load_state_dict(checkpoint)
-        cls.torch_model.double()  # Ensure model is in double precision
+            # Convert checkpoint to double precision
+            checkpoint = {k: v.double() for k, v in checkpoint.items()}
+            
+            jax.tree.map(
+                lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
+                dict(cls.torch_model.state_dict()),
+                checkpoint,
+            )
+            cls.torch_model.load_state_dict(checkpoint)
 
-        # Convert params to float64
+        # Ensure model is in double precision. Probably not needed?
+        cls.torch_model.double()
+
+        # Finally, create the jax model:
         cls.params = model.transformer_params_from_module(cls.torch_model)
-
         cls.flax_model = model.Transformer(cls.config)
 
     def tearDown(self):
