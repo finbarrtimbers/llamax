@@ -1,11 +1,11 @@
+import dataclasses
 import math
 from typing import Any, Dict, Optional, Tuple
 
-import jax
-import jax_dataclasses as jdc
-import jax.numpy as jnp
 import flax.linen as nn
-import dataclasses
+import jax
+import jax.numpy as jnp
+import jax_dataclasses as jdc
 
 import llamax
 from llamax import reference_model_torch
@@ -67,8 +67,8 @@ def apply_rotary_emb(
     xq_out = xq_complex * freqs_cis
     xk_out = xk_complex * freqs_cis
 
-    xq_out = jnp.stack([xq_out.real, xq_out.imag], axis=-1).reshape(xq.shape)
-    xk_out = jnp.stack([xk_out.real, xk_out.imag], axis=-1).reshape(xk.shape)
+    xq_out = jnp.stack([jnp.real(xq_out), jnp.imag(xq_out)], axis=-1).reshape(xq.shape)
+    xk_out = jnp.stack([jnp.real(xk_out), jnp.imag(xk_out)], axis=-1).reshape(xk.shape)
     return xq_out.astype(xq.dtype), xk_out.astype(xk.dtype)
 
 
@@ -204,6 +204,7 @@ class TransformerBlock(nn.Module):
         )
         attention_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
         ffn_norm = RMSNorm(self.config.dim, eps=self.config.norm_eps)
+
         h = x + attention(attention_norm(x), start_pos, freqs_cis, mask)
         out = h + feed_forward(ffn_norm(h))
         return out
@@ -240,11 +241,13 @@ class Transformer(nn.Module):
         freqs_cis = jax.lax.dynamic_slice_in_dim(
             freqs_cis, start_pos, tokens.shape[1], axis=0
         )
+
         for layer_id in range(self.config.n_layers):
             h = TransformerBlock(
                 layer_id=layer_id,
                 config=self.config,
             )(h, start_pos, freqs_cis, mask)
+
         h = RMSNorm(self.config.dim, eps=self.config.norm_eps)(h)
         output = nn.Dense(features=self.config.vocab_size, use_bias=False)(h)
         return output
