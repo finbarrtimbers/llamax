@@ -2,13 +2,11 @@ import unittest
 import llamax
 
 import flax.linen as nn
-import functools
 import jax
 import jax.numpy as jnp
 import numpy as np
 import os
 
-import time
 import transformers
 import torch
 
@@ -16,7 +14,6 @@ from llamax import generate
 from llamax import model
 from llamax import reference_model_torch
 
-import psutil
 import gc
 
 
