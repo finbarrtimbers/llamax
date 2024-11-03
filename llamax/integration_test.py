@@ -125,7 +125,7 @@ class IntegrationTests(unittest.TestCase):
 
             # Convert checkpoint to double precision
             checkpoint = {k: v.double() for k, v in checkpoint.items()}
-            
+
             jax.tree.map(
                 lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
                 dict(cls.torch_model.state_dict()),
