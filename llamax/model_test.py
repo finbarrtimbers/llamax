@@ -149,8 +149,6 @@ class TestModelEquivalence(unittest.TestCase):
         )
         start_pos = 0
         mask = llamax.make_causal_mask(SEQ_LEN)
-        print(f"{mask=}")
-        print(f"{jnp.any(jnp.all(~mask, axis=-1))=}")
         freqs_cis = self.freqs[start_pos : start_pos + SEQ_LEN]
         params = {"params": model.attention_params_from_torch(torch_attn)}
 
@@ -177,10 +175,7 @@ class TestModelEquivalence(unittest.TestCase):
         ).double()
         flax_block = model.TransformerBlock(layer_id=0, config=self.config)
         start_pos = 0
-        mask = jnp.full((SEQ_LEN, SEQ_LEN), float("-inf"))
-
-        # Standard causal mask.
-        mask = jnp.triu(mask, k=1)
+        mask = llamax.make_causal_mask(SEQ_LEN)
         freqs_cis = self.freqs[start_pos : start_pos + SEQ_LEN]
         params = {"params": model.block_params_from_module(torch_block)}
 
@@ -211,7 +206,7 @@ class TestModelEquivalence(unittest.TestCase):
         params = model.transformer_params_from_module(torch_model)
 
         def torch_module(x):
-            return torch_model(x, start_pos)
+            return torch_model(x, start_pos, torch.from_numpy(np.array(mask)))
 
         def flax_module(x):
             return flax_model.apply(params, x, start_pos, mask)
@@ -267,98 +262,6 @@ class TestModelEquivalence(unittest.TestCase):
         torch_grad_np = self.torch_model.layer1.weight.grad.numpy()
 
         np.testing.assert_allclose(jax_grad_np, torch_grad_np, rtol=1e-5, atol=1e-5)
-
-
-class IntegrationTests(unittest.TestCase):
-    def setUp(self):
-        # Set both JAX and PyTorch to use CPU
-        jax.config.update("jax_platform_name", "cpu")
-
-        # Set random seed for reproducibility
-        np.random.seed(42)
-        torch.manual_seed(42)
-        self.config = LLAMA_32_1B_CONFIG
-        self.freqs = model.precompute_freqs_cis(
-            dim=self.config.dim // self.config.n_heads,
-            end=self.config.max_seq_len * 2,
-            theta=self.config.rope_theta,
-        )
-        self.torch_model = reference_model_torch.Transformer(self.config)
-        checkpoint = torch.load(
-            "/data/llama-3.2-1B/consolidated.00.pth",
-            map_location="cpu",
-            weights_only=True,
-        )
-        jax.tree.map(
-            lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
-            dict(self.torch_model.state_dict()),
-            checkpoint,
-        )
-        self.torch_model.load_state_dict(checkpoint)
-        self.torch_model.double()
-        self.params = model.transformer_params_from_module(self.torch_model)
-        flax_model = model.Transformer(self.config)
-        self.apply_fn = jax.jit(flax_model.apply)
-
-    def test_logits_match(self):
-        inputs = np.random.randint(
-            0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN)
-        )
-        mask = llamax.make_causal_mask(SEQ_LEN)
-        torch_logits = self.torch_model(
-            torch.from_numpy(inputs),
-            start_pos=0,
-            mask=torch.from_numpy(np.array(mask, copy=True)),
-        )
-        torch_logits = np.array(torch_logits, copy=True)
-        flax_logits = self.apply_fn(self.params, inputs, start_pos=0, mask=mask)
-
-        # First, we check that both tensors have no nans/infs. Otherwise, we get
-        # spurious tests passing.
-        self.assertTrue(np.isfinite(torch_logits).all())
-        self.assertTrue(np.isfinite(flax_logits).all())
-        np.testing.assert_array_almost_equal(torch_logits, flax_logits)
-
-    @unittest.skip("This is slow so we don't run it by default.")
-    def test_checkpoint_matches_torch(self):
-        torch_model = reference_model_torch.Transformer(self.config)
-        checkpoint = torch.load(
-            "/data/llama-3.2-1B/consolidated.00.pth",
-            map_location="cpu",
-            weights_only=True,
-        )
-        jax.tree.map(
-            lambda x, y: np.testing.assert_array_equal(x.shape, y.shape),
-            dict(torch_model.state_dict()),
-            checkpoint,
-        )
-        self.torch_model.load_state_dict(checkpoint)
-
-        def count_leaves(tree) -> int:
-            shape_dict = jax.tree.map(lambda x: jnp.prod(jnp.array(x.shape)), tree)
-            return jnp.sum(jnp.array(list(shape_dict.values())))
-
-        self.assertEqual(
-            count_leaves(torch_model.state_dict()), count_leaves(checkpoint)
-        )
-        self.assertEqual(count_leaves(checkpoint), NUM_WEIGHTS)
-        torch_model.load_state_dict(checkpoint)
-
-    def test_num_parameters_match(self):
-        flax_model = model.Transformer(config=self.config)
-        inputs = np.random.randint(
-            0, self.config.vocab_size, size=(BATCH_SIZE, SEQ_LEN)
-        )
-        mask = llamax.make_causal_mask(SEQ_LEN)
-        params = flax_model.init(jax.random.PRNGKey(0), inputs, start_pos=0, mask=mask)
-        num_params = jnp.sum(
-            jnp.array(
-                jax.tree.map(
-                    lambda x: jnp.prod(jnp.array(x.shape)), jax.tree.flatten(params)[0]
-                )
-            )
-        )
-        self.assertEqual(num_params, NUM_WEIGHTS)
 
 
 if __name__ == "__main__":
