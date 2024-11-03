@@ -97,6 +97,10 @@ class IntegrationTests(unittest.TestCase):
             cls.model, token=os.environ["HF_TOKEN"]
         )
 
+        # These tests require too much memory to run on Github CI.
+        if not checkpoint_exists():
+            return
+
         # Set random seed for reproducibility
         cls.seed = 42
         np.random.seed(cls.seed)
@@ -224,6 +228,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(count_leaves(checkpoint), NUM_WEIGHTS)
         torch_model.load_state_dict(checkpoint)
 
+    @unittest.skipIf(not checkpoint_exists(), "checkpoint doesn't exist")
     def test_num_parameters_match(self):
         num_params = jnp.sum(
             jnp.array(
