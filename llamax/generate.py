@@ -52,8 +52,7 @@ def apply_top_k(logits: jax.Array, *, top_k: int) -> jax.Array:
 
 
 @ft.partial(jax.jit, static_argnames=["p"])
-def apply_top_p(logits: jax.Array, *, p: int, temperature: float = 1.0) -> jax.Array:
-    logits = logits / temperature
+def apply_top_p(logits: jax.Array, *, p: float) -> jax.Array:
     sorted_logits, sorted_indices = jax.lax.top_k(logits, logits.shape[-1])
     probs = jax.nn.softmax(sorted_logits)
     cumulative_probs = jnp.cumsum(probs, axis=-1)
@@ -67,7 +66,7 @@ def apply_top_p(logits: jax.Array, *, p: int, temperature: float = 1.0) -> jax.A
     return jnp.where(original_mask, logits, float("-inf"))
 
 
-@ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k", "top_p"))
+@ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k"))
 def generate_tokens(
     params: Dict,
     model: nn.Module,
@@ -76,7 +75,6 @@ def generate_tokens(
     max_length: int = 100,
     temperature: float = 1.0,
     top_k: Optional[int] = 50,
-    top_p: Optional[float] = 0.9,
 ) -> Tuple[jax.Array, jax.Array]:
     """
     JIT-compiled function for text generation using JAX structured control flow.
@@ -89,7 +87,6 @@ def generate_tokens(
         max_length: Maximum length of generated sequence
         temperature: Sampling temperature
         top_k: Number of highest probability tokens to consider
-        top_p: Cumulative probability cutoff for nucleus sampling
 
     Returns:
         Generated token arrays with shape (batch_size, max_length) and type jnp.int32.
@@ -117,7 +114,6 @@ def generate_tokens(
 
         # Apply top-k and top-p filtering
         logits = apply_top_k(logits, top_k=top_k)
-        logits = apply_top_p(logits, p=top_p)
 
         # Sample from the modified distribution
         next_token = jax.random.categorical(key, logits, axis=-1)
@@ -142,18 +138,17 @@ def generate_tokens(
         next_token = sample_token(next_token_logits, temperature, sample_key)
 
         # Update output arrays
-        tokens = state.tokens.at[:, state.i].set(next_token)
-
+        tokens = state.tokens.at[:, state.i + 1].set(next_token)
         return LoopState(state.i + 1, tokens, cur_key)
 
     def cond_fn(state):
         """Condition for continuing generation."""
-        not_max_len = state.i < max_length - init_seq_len
+        not_max_len = state.i < max_length
         # TODO(finbarrtimbers): Add support to check if all the sequences are EOS.
         return not_max_len
 
     # Initialize loop state
-    init_state = LoopState(init_seq_len, output_tokens, key)
+    init_state = LoopState(init_seq_len - 1, output_tokens, key)
 
     # Run the generation loop
     final_state = jax.lax.while_loop(cond_fn, generation_loop, init_state)
@@ -171,7 +166,6 @@ def generate_text(
     max_length: int = 100,
     temperature: float = 1.0,
     top_k: Optional[int] = 50,
-    top_p: Optional[float] = 0.9,
     seed: int = 42,
 ) -> str:
     """
@@ -191,11 +185,12 @@ def generate_text(
         input_ids=input_ids,
         key=key,
         # We add one to account for <bos>.
-        max_length=max_length + 1,
+        max_length=input_ids.shape[-1] + max_length + 1,
         temperature=temperature,
         top_k=top_k,
-        top_p=top_p,
     )
+    generated_ids.block_until_ready()
+    jax.effects_barrier()
 
     # Extract valid tokens using attention mask
     return tokenizer.decode(generated_ids[0, 1:])

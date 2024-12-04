@@ -1,15 +1,15 @@
 import unittest
-from parameterized import parameterized
-import jax
-import jax.numpy as jnp
-import torch
-import numpy as np
-
 import llamax
-from llamax import model
-from llamax import reference_model_torch
 
 import flax.linen as nn
+import jax
+import jax.numpy as jnp
+import numpy as np
+import torch
+from parameterized import parameterized
+
+from llamax import model
+from llamax import reference_model_torch
 
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
     vocab_size=1_000,
@@ -17,6 +17,31 @@ SMALL_MODEL_CONFIG = llamax.ModelArgs(
     n_layers=1,
     n_heads=4,
 )
+LLAMA_32_1B_CONFIG = llamax.ModelArgs(
+    dim=2048,
+    ffn_dim_multiplier=1.5,
+    multiple_of=256,
+    n_heads=32,
+    n_kv_heads=8,
+    n_layers=16,
+    vocab_size=128256,
+    norm_eps=1e-5,
+    # use_scaled_rope=True,
+)
+
+# This is the number of params in Llama 3.2 1B.
+NUM_WEIGHTS = 1_498_482_688
+
+# These are all length 128 after the prompt, and
+KNOWN_TEXT = {
+    "llama_3.2_1B": {
+        "Hello, world!": (
+            " I’m a 20-something year old who loves to write. I’m a huge fan "
+            "of the Harry Potter series, and I’m also a huge fan"
+        ),
+    }
+}
+
 
 # We use numbers that are mutually prime and >1 to ensure no weirdness.
 BATCH_SIZE = 2
@@ -38,6 +63,10 @@ def assert_modules_output_same_code(
     # Convert outputs to numpy arrays
     jax_output_np = np.array(jax_output)
     torch_output_np = torch_output.detach().numpy()
+
+    # First, check that the output is finite:
+    assert np.isfinite(jax_output_np).all(), f"{jax_output_np=}"
+    assert np.isfinite(torch_output_np).all(), f"{torch_output_np=}"
 
     # Check if outputs are equal within a small tolerance
     np.testing.assert_array_almost_equal(jax_output_np, torch_output_np)
@@ -119,10 +148,7 @@ class TestModelEquivalence(unittest.TestCase):
             n_kv_heads=self.config.n_kv_heads,
         )
         start_pos = 0
-        mask = jnp.full((SEQ_LEN, SEQ_LEN), float("-inf"))
-
-        # Standard causal mask.
-        mask = jnp.triu(mask, k=1)
+        mask = llamax.make_causal_mask(SEQ_LEN)
         freqs_cis = self.freqs[start_pos : start_pos + SEQ_LEN]
         params = {"params": model.attention_params_from_torch(torch_attn)}
 
@@ -149,10 +175,7 @@ class TestModelEquivalence(unittest.TestCase):
         ).double()
         flax_block = model.TransformerBlock(layer_id=0, config=self.config)
         start_pos = 0
-        mask = jnp.full((SEQ_LEN, SEQ_LEN), float("-inf"))
-
-        # Standard causal mask.
-        mask = jnp.triu(mask, k=1)
+        mask = llamax.make_causal_mask(SEQ_LEN)
         freqs_cis = self.freqs[start_pos : start_pos + SEQ_LEN]
         params = {"params": model.block_params_from_module(torch_block)}
 
@@ -183,7 +206,7 @@ class TestModelEquivalence(unittest.TestCase):
         params = model.transformer_params_from_module(torch_model)
 
         def torch_module(x):
-            return torch_model(x, start_pos)
+            return torch_model(x, start_pos, torch.from_numpy(np.array(mask)))
 
         def flax_module(x):
             return flax_model.apply(params, x, start_pos, mask)
@@ -242,4 +265,4 @@ class TestModelEquivalence(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(failfast=True)

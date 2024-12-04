@@ -16,8 +16,8 @@ The code is very much a work in-progress; use at your own risk.
 - [x] Support passing in `kv_mask` and `pairwise_mask` to support padded sequences. Test that this works properly.
 - [ ] Implement sharding, at least model-parallel + data-parallel.
 - [ ] Change the main transformer loop to use a scan instead.
-- [ ] Add benchmarks.
-- [ ] Test against the actual llama3 weights.
+- [ ] Add throughput benchmarks.
+- [x] Test against the actual llama3 weights.
 - [ ] Add code that can run tests using Modal Labs.
 - [ ] (Stretch goal) Implement some of the fancier sharding methods listed in Meta's [Movie Gen](https://ai.meta.com/research/movie-gen/) paper.
 - [ ] Add tests on GPU.
@@ -25,4 +25,14 @@ The code is very much a work in-progress; use at your own risk.
 
 ## Usage
 
-Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`.
+Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`. 
+
+Get your Huggingface token by following [their instructions](https://huggingface.co/docs/hub/en/security-tokens). If you want to run the integration test, download weights as per instructions below, and then pass them in via `-v $WEIGHTS_DIR:/data` in the Docker command above.
+
+
+### Weights
+
+I don't include any of the weights needed to test the implementations. You'll
+ need to get them yourself. Here's where I got them:
+
+1. **Llama 3.2 1B**: Copy the "original" folder from [Huggingface](https://huggingface.co/meta-llama/Llama-3.2-1B/tree/main/original).

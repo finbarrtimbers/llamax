@@ -1,11 +1,11 @@
+import dataclasses
 import math
 from typing import Any, Dict, Optional, Tuple
 
-import jax
-import jax_dataclasses as jdc
-import jax.numpy as jnp
 import flax.linen as nn
-import dataclasses
+import jax
+import jax.numpy as jnp
+import jax_dataclasses as jdc
 
 import llamax
 from llamax import reference_model_torch
@@ -76,7 +76,7 @@ def repeat_kv(x: jnp.ndarray, n_rep: int) -> jnp.ndarray:
     bs, slen, n_kv_heads, head_dim = x.shape
     if n_rep == 1:
         return x
-    return jnp.repeat(x[:, :, None, :, :], n_rep, axis=2).reshape(
+    return jnp.repeat(x[:, :, :, None, :], n_rep, axis=2).reshape(
         bs, slen, n_kv_heads * n_rep, head_dim
     )
 
@@ -124,11 +124,10 @@ class Attention(nn.Module):
         xq = jnp.transpose(xq, (0, 2, 1, 3))
         xk = jnp.transpose(xk, (0, 2, 1, 3))
         xv = jnp.transpose(xv, (0, 2, 1, 3))
-
         scores = jnp.matmul(xq, jnp.swapaxes(xk, -1, -2)) / math.sqrt(head_dim)
         if mask is not None:
-            scores = scores + (mask * float("-inf"))
-        scores = jax.nn.softmax(scores, axis=-1)
+            scores = jnp.where(mask, float("-inf"), scores)
+        scores = jax.nn.softmax(scores.astype(jnp.float32), axis=-1).astype(xq.dtype)
         output = jnp.matmul(scores, xv)
         output = jnp.transpose(output, (0, 2, 1, 3)).reshape(bsz, seqlen, -1)
         return wo(output)
