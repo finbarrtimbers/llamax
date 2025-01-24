@@ -5,11 +5,23 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import transformers
+import torch
 
 import llamax
 from llamax import generate, model
 
 MAX_LENGTH = 32
+
+# Dict mapping models to prompts to known good text (generated from the API).
+# We use a maximum length of 32 tokens.
+GOLDEN_TEXT = {
+    "deepseek-ai/deepseek-coder-1.3b-base": {
+        "def fibonacci(n):": (
+            "def fibonacci(n):\n    if n == 0:\n        return 0\n    elif n"
+            " == 1:\n        return 1\n    else:\n        return fib"
+        ),
+    }
+}
 
 
 class TestTextGeneration(unittest.TestCase):
@@ -233,6 +245,76 @@ class TestTextGeneration(unittest.TestCase):
 
         self.assertIsInstance(generated, str)
         self.assertTrue(long_prompt in generated)
+
+
+# TODO(finbarr): Figure out how to parameterize the tests so we don't
+# repeat as much code.'
+class TestDeepSeekCoderGeneration(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        """Set up the official model and tokenizer for comparison."""
+        # Initialize official model and tokenizer
+        cls.official_model_name = "deepseek-ai/deepseek-coder-1.3b-base"
+
+        cls.official_tokenizer = transformers.AutoTokenizer.from_pretrained(
+            cls.official_model_name
+        )
+        cls.official_model = transformers.AutoModelForCausalLM.from_pretrained(
+            cls.official_model_name
+        )
+
+        # Initialize your implementation
+        cls.config = llamax.ModelArgs(
+            dim=2048,  # Update with correct model dimensions
+            n_layers=24,  # Update with correct number of layers
+            n_heads=16,  # Update with correct number of heads
+            vocab_size=cls.official_tokenizer.vocab_size,
+            max_batch_size=1,
+            max_seq_len=2048,
+        )
+
+        cls.model = model.Transformer(cls.config)
+        key = jax.random.PRNGKey(0)
+        dummy_input = jnp.ones((1, 1), dtype=jnp.int32)
+        cls.params = cls.model.init(key, dummy_input, 0)
+
+        # Load the pretrained weights into your implementation
+        # You'll need to implement this conversion
+        # cls.params = convert_deepseek_weights_to_llamax(
+        #     cls.official_model.state_dict())
+
+    def test_simple_completion(self):
+        """Test a simple code completion task."""
+        prompt = "def fibonacci(n):"
+
+        # Generate with official model
+        inputs = self.official_tokenizer(prompt, return_tensors="pt")
+        with torch.no_grad():
+            official_output = self.official_model.generate(
+                inputs["input_ids"],
+                max_new_tokens=32,
+                do_sample=False,
+            )
+        official_text = self.official_tokenizer.decode(
+            official_output[0], skip_special_tokens=True
+        )
+        golden_text = GOLDEN_TEXT[self.official_model_name][prompt]
+        golden_text = golden_text[: len(official_text)]
+        self.assertEqual(len(official_text), len(golden_text))
+        self.assertEqual(official_text, golden_text)
+
+        # # Generate with your implementation
+        # llamax_text = generate.generate_text(
+        #     self.params,
+        #     self.model,
+        #     self.official_tokenizer,
+        #     prompt,
+        #     max_length=100,
+        #     temperature=0.7,
+        #     top_p=0.95,
+        # )
+
+        # self.assertEqual(official_text, llamax_text)
 
 
 class TestSamplingFunctions(unittest.TestCase):

@@ -25,7 +25,15 @@ The code is very much a work in-progress; use at your own risk.
 
 ## Usage
 
-Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`. 
+Run tests with
+
+```
+docker build -t llamax . && \
+    docker run \
+    -v $HOME/.cache/huggingface:/root/.cache/huggingface \
+    -e JAX_ENABLE_X64=True \
+    -e HF_TOKEN=$HF_TOKEN \
+    llamax pytest```
 
 Get your Huggingface token by following [their instructions](https://huggingface.co/docs/hub/en/security-tokens). If you want to run the integration test, download weights as per instructions below, and then pass them in via `-v $WEIGHTS_DIR:/data` in the Docker command above.
 
