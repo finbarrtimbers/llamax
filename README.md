@@ -38,20 +38,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 1. Clone the repository and install dependencies:
 
 ```bash
-uv sync
+uv sync --extra dev
 ```
 
-2. Install pre-commit and ruff as tools:
+2. Install pre-commit hooks:
 
 ```bash
-uv tool install pre-commit
-uv tool install ruff
-```
-
-3. Install pre-commit hooks:
-
-```bash
-pre-commit install
+uv run pre-commit install
 ```
 
 ## Usage
@@ -67,8 +60,8 @@ uv run pytest
 Run the linter and formatter:
 
 ```bash
-ruff check .
-ruff format .
+uv run ruff check .
+uv run ruff format .
 ```
 
 Or use the Makefile (if available):
