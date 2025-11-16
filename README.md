@@ -23,9 +23,58 @@ The code is very much a work in-progress; use at your own risk.
 - [ ] Add tests on GPU.
 - [x] Pin dependency versions.
 
+## Setup
+
+### Prerequisites
+
+Install [uv](https://docs.astral.sh/uv/) for Python package management:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Installation
+
+1. Clone the repository and install dependencies:
+
+```bash
+uv sync --extra dev
+```
+
+2. Install pre-commit hooks:
+
+```bash
+uv run pre-commit install
+```
+
 ## Usage
 
-Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`. 
+### Running Tests
+
+```bash
+uv run pytest
+```
+
+### Linting and Formatting
+
+Run the linter and formatter:
+
+```bash
+uv run ruff check .
+uv run ruff format .
+```
+
+Or use the Makefile (if available):
+
+```bash
+make style && make quality
+```
+
+Pre-commit hooks will automatically run ruff on staged files before each commit.
+
+### Docker
+
+Run tests with `docker build -t llamax . && docker run -e JAX_ENABLE_X64=True -e HF_TOKEN=$HF_TOKEN llamax pytest`.
 
 Get your Huggingface token by following [their instructions](https://huggingface.co/docs/hub/en/security-tokens). If you want to run the integration test, download weights as per instructions below, and then pass them in via `-v $WEIGHTS_DIR:/data` in the Docker command above.
 

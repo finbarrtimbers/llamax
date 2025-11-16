@@ -16,26 +16,24 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
       with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
-        cache-dependency-path: requirements.txt
+        enable-cache: true
+
+    - name: Set up Python ${{ matrix.python-version }}
+      run: uv python install ${{ matrix.python-version }}
 
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        pip install pytest pytest-cov pytest-xdist
+      run: uv sync
 
     - name: Run tests with coverage
       env:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
         JAX_ENABLE_X64: True
       run: |
-        pytest -n auto -x --doctest-modules --junitxml=junit/test-results-${{ matrix.python-version }}.xml --cov=. --cov-report=xml --cov-report=html
-        coverage-badge -o coverage.svg -f
+        uv run pytest -n auto -x --doctest-modules --junitxml=junit/test-results-${{ matrix.python-version }}.xml --cov=. --cov-report=xml --cov-report=html
+        uv run coverage-badge -o coverage.svg -f
 
     - name: Upload coverage badge
       uses: exuanbo/actions-deploy-gist@v1

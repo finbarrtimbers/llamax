@@ -1,6 +1,6 @@
 import dataclasses
 import math
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import flax.linen as nn
 import jax
@@ -28,7 +28,7 @@ class RMSNorm(nn.Module):
 
 def rmsnorm_params_from_torch(
     torch_module: reference_model_torch.RMSNorm,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {"weight": torch_module.weight.detach().numpy()}
 
 
@@ -56,7 +56,7 @@ def apply_rotary_emb(
     xq: jnp.ndarray,
     xk: jnp.ndarray,
     freqs_cis: jnp.ndarray,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     xq_ = jnp.reshape(xq.astype(jnp.float32), (*xq.shape[:-1], -1, 2))
     xk_ = jnp.reshape(xk.astype(jnp.float32), (*xk.shape[:-1], -1, 2))
     xq_complex = xq_[..., 0] + 1j * xq_[..., 1]
@@ -87,7 +87,7 @@ class Attention(nn.Module):
     dim: int
     max_batch_size: int
     max_seq_len: int
-    n_kv_heads: Optional[int] = None
+    n_kv_heads: int | None = None
 
     @nn.compact
     def __call__(
@@ -95,7 +95,7 @@ class Attention(nn.Module):
         x: jnp.ndarray,
         start_pos: int,
         freqs_cis: jnp.ndarray,
-        mask: Optional[jnp.ndarray],
+        mask: jnp.ndarray | None,
     ):
         # This is unused until we have a KV cache.
         del start_pos
@@ -135,7 +135,7 @@ class Attention(nn.Module):
 
 def attention_params_from_torch(
     torch_module: reference_model_torch.Attention,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "wk": {"kernel": torch_module.wk.weight.detach().numpy().T},
         "wo": {"kernel": torch_module.wo.weight.detach().numpy().T},
@@ -149,7 +149,7 @@ class FeedForward(nn.Module):
     dim: int
     hidden_dim: int
     multiple_of: int
-    ffn_dim_multiplier: Optional[float] = None
+    ffn_dim_multiplier: float | None = None
 
     @nn.compact
     def __call__(self, x):
@@ -168,7 +168,7 @@ class FeedForward(nn.Module):
 
 def feedforward_params_from_torch(
     torch_module: reference_model_torch.FeedForward,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "w1": {"kernel": torch_module.w1.weight.detach().numpy().T},
         "w2": {"kernel": torch_module.w2.weight.detach().numpy().T},
@@ -187,7 +187,7 @@ class TransformerBlock(nn.Module):
         x: jnp.ndarray,
         start_pos: int,
         freqs_cis: jnp.ndarray,
-        mask: Optional[jnp.ndarray],
+        mask: jnp.ndarray | None,
     ):
         attention = Attention(
             n_heads=self.config.n_heads,
@@ -212,7 +212,7 @@ class TransformerBlock(nn.Module):
 
 def block_params_from_module(
     torch_module: reference_model_torch.TransformerBlock,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "Attention_0": attention_params_from_torch(torch_module.attention),
         "FeedForward_0": feedforward_params_from_torch(torch_module.feed_forward),
@@ -227,7 +227,7 @@ class Transformer(nn.Module):
 
     @nn.compact
     def __call__(
-        self, tokens: jnp.ndarray, start_pos: int, mask: Optional[jnp.ndarray] = None
+        self, tokens: jnp.ndarray, start_pos: int, mask: jnp.ndarray | None = None
     ):
         tok_embeddings = nn.Embed(self.config.vocab_size, self.config.dim)
 
@@ -255,7 +255,7 @@ class Transformer(nn.Module):
 
 def transformer_params_from_module(
     torch_module: reference_model_torch.Transformer,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     params = {
         "params": {
             "Dense_0": {"kernel": torch_module.output.weight.detach().numpy().T},

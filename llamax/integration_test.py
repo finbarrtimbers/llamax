@@ -1,21 +1,16 @@
+import gc
+import os
 import unittest
-import llamax
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
-import os
-
-import transformers
 import torch
+import transformers
 
-from llamax import generate
-from llamax import model
-from llamax import reference_model_torch
-
-import gc
-
+import llamax
+from llamax import generate, model, reference_model_torch
 
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
     vocab_size=1_000,
