@@ -21,7 +21,6 @@ print(generated_text)
 """
 
 import functools as ft
-from typing import Dict, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -68,14 +67,14 @@ def apply_top_p(logits: jax.Array, *, p: float) -> jax.Array:
 
 @ft.partial(jax.jit, static_argnames=("model", "max_length", "top_k"))
 def generate_tokens(
-    params: Dict,
+    params: dict,
     model: nn.Module,
     input_ids: jax.Array,
     key: jax.Array,
     max_length: int = 100,
     temperature: float = 1.0,
-    top_k: Optional[int] = 50,
-) -> Tuple[jax.Array, jax.Array]:
+    top_k: int | None = 50,
+) -> tuple[jax.Array, jax.Array]:
     """
     JIT-compiled function for text generation using JAX structured control flow.
 
@@ -159,13 +158,13 @@ def generate_tokens(
 
 
 def generate_text(
-    params: Dict,
+    params: dict,
     model: nn.Module,
     tokenizer,
     prompt: str,
     max_length: int = 100,
     temperature: float = 1.0,
-    top_k: Optional[int] = 50,
+    top_k: int | None = 50,
     seed: int = 42,
 ) -> str:
     """

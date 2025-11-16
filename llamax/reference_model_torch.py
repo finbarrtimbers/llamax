@@ -1,5 +1,4 @@
 import math
-from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -45,7 +44,7 @@ def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
     freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
@@ -123,7 +122,7 @@ class Attention(nn.Module):
         x: torch.Tensor,
         start_pos: int,
         freqs_cis: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        mask: torch.Tensor | None,
     ):
         bsz, seqlen, _ = x.shape
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
@@ -173,7 +172,7 @@ class FeedForward(nn.Module):
         dim: int,
         hidden_dim: int,
         multiple_of: int,
-        ffn_dim_multiplier: Optional[float],
+        ffn_dim_multiplier: float | None,
     ):
         super().__init__()
         hidden_dim = int(2 * hidden_dim / 3)
@@ -224,7 +223,7 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,
         start_pos: int,
         freqs_cis: torch.Tensor,
-        mask: Optional[torch.Tensor],
+        mask: torch.Tensor | None,
     ):
         h = x + self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
         out = h + self.feed_forward(self.ffn_norm(h))
@@ -259,27 +258,20 @@ class Transformer(nn.Module):
 
     @torch.inference_mode()
     def forward(
-        self, tokens: torch.Tensor, start_pos: int, mask: Optional[torch.Tensor] = None
+        self, tokens: torch.Tensor, start_pos: int, mask: torch.Tensor | None = None
     ):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
 
-        if seqlen > 1:
-            # We set the mask to
-            if mask is None:
-                mask = torch.full((seqlen, seqlen), 1, device=tokens.device)
-                mask = torch.triu(mask, diagonal=1)
+        if seqlen > 1 and mask is None:
+            mask = torch.full((seqlen, seqlen), 1, device=tokens.device)
+            mask = torch.triu(mask, diagonal=1)
 
-                # When performing key-value caching, we compute the attention
-                # scores only for the new sequence. Thus, the matrix of scores
-                # is of size (seqlen, cache_len + seqlen), and the only masked
-                # entries are (i, j) for j > cache_len + i, since row i
-                # corresponds to token cache_len + i.
-                mask = torch.hstack(
-                    [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
-                ).type_as(h)
+            mask = torch.hstack(
+                [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
+            ).type_as(h)
 
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)

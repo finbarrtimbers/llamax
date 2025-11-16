@@ -1,5 +1,4 @@
 import unittest
-import llamax
 
 import flax.linen as nn
 import jax
@@ -8,8 +7,8 @@ import numpy as np
 import torch
 from parameterized import parameterized
 
-from llamax import model
-from llamax import reference_model_torch
+import llamax
+from llamax import model, reference_model_torch
 
 SMALL_MODEL_CONFIG = llamax.ModelArgs(
     vocab_size=1_000,
