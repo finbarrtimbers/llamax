@@ -6,12 +6,13 @@ from pathlib import Path
 # Get the project root directory
 project_root = Path(__file__).parent.parent
 
-# Create a Modal image with all necessary dependencies from pyproject.toml
+# Create a Modal image with all necessary dependencies using uv
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install_from_pyproject(
-        project_root / "pyproject.toml",
-        optional_dependencies=["dev"],
+    .add_local_file(project_root / "pyproject.toml", "/root/pyproject.toml")
+    .uv_sync(
+        local_path=project_root,
+        extras=["dev"],
     )
     .env({"JAX_ENABLE_X64": "True"})
 )
