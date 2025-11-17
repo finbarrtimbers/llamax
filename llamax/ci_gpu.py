@@ -6,25 +6,18 @@ from pathlib import Path
 # Get the project root directory
 project_root = Path(__file__).parent.parent
 
-# Create a Modal image with all necessary dependencies
+# Create a Modal image with all necessary dependencies using uv
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install(
-        "jax[cuda12]==0.4.34",
-        "jaxlib==0.4.34",
-        "flax==0.10.0",
-        "torch==2.5.0",
-        "numpy==2.1.2",
-        "pytest==8.3.3",
-        "pytest-cov>=6.0.0",
-        "pytest-xdist>=3.6.1",
-        "parameterized==0.9.0",
-        "psutil==6.1.0",
-        "transformers==4.45.2",
-        "sentencepiece==0.2.0",
-        "jax-dataclasses==1.6.1",
+    .run_commands(
+        "apt-get update && apt-get install -y curl",
+        "curl -LsSf https://astral.sh/uv/install.sh | sh",
     )
-    .env({"JAX_ENABLE_X64": "True"})
+    .env({"PATH": "/root/.cargo/bin:$PATH", "JAX_ENABLE_X64": "True"})
+    .copy_local_file(project_root / "pyproject.toml", "/root/llamax/pyproject.toml")
+    .run_commands(
+        "cd /root/llamax && /root/.cargo/bin/uv sync --extra dev",
+    )
 )
 
 app = modal.App("llamax-gpu-tests", image=image)
@@ -45,14 +38,12 @@ code_mount = modal.Mount.from_local_dir(
 def run_gpu_tests():
     """Run pytest on all tests ending with _gpu.py"""
     import subprocess
-    import sys
 
-    # Add the project to Python path
-    sys.path.insert(0, "/root/llamax")
-
-    # Run pytest on files ending with _gpu.py
+    # Run pytest using uv on files with 'gpu' in the name
     result = subprocess.run(
         [
+            "/root/.cargo/bin/uv",
+            "run",
             "pytest",
             "-v",
             "/root/llamax/llamax",
@@ -61,6 +52,7 @@ def run_gpu_tests():
             "--tb=short",
         ],
         check=False,
+        cwd="/root/llamax",
         capture_output=True,
         text=True,
     )
