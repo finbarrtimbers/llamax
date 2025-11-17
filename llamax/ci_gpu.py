@@ -6,18 +6,14 @@ from pathlib import Path
 # Get the project root directory
 project_root = Path(__file__).parent.parent
 
-# Create a Modal image with all necessary dependencies using uv
+# Create a Modal image with all necessary dependencies from pyproject.toml
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .run_commands(
-        "apt-get update && apt-get install -y curl",
-        "curl -LsSf https://astral.sh/uv/install.sh | sh",
+    .pip_install_from_pyproject(
+        project_root / "pyproject.toml",
+        optional_dependencies=["dev"],
     )
-    .env({"PATH": "/root/.cargo/bin:$PATH", "JAX_ENABLE_X64": "True"})
-    .copy_local_file(project_root / "pyproject.toml", "/root/llamax/pyproject.toml")
-    .run_commands(
-        "cd /root/llamax && /root/.cargo/bin/uv sync --extra dev",
-    )
+    .env({"JAX_ENABLE_X64": "True"})
 )
 
 app = modal.App("llamax-gpu-tests", image=image)
@@ -39,11 +35,9 @@ def run_gpu_tests():
     """Run pytest on all tests ending with _gpu.py"""
     import subprocess
 
-    # Run pytest using uv on files with 'gpu' in the name
+    # Run pytest on files with 'gpu' in the name
     result = subprocess.run(
         [
-            "/root/.cargo/bin/uv",
-            "run",
             "pytest",
             "-v",
             "/root/llamax/llamax",
