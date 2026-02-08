@@ -10,21 +10,15 @@ project_root = Path(__file__).parent.parent
 # Create a Modal image with all necessary dependencies using uv
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .add_local_file(project_root / "pyproject.toml", "/root/pyproject.toml")
     .uv_sync(
-        local_path=project_root,
+        uv_project_dir=project_root,
         extras=["dev"],
     )
+    .add_local_python_source("llamax", str(project_root / "llamax"))
     .env({"JAX_ENABLE_X64": "True"})
 )
 
 app = modal.App("llamax-gpu-tests", image=image)
-
-# Mount the project code
-code_mount = modal.Mount.from_local_dir(
-    project_root,
-    remote_path="/root/llamax",
-)
 
 
 def create_gpu_test_function(gpu_type: str = "any"):
@@ -33,8 +27,7 @@ def create_gpu_test_function(gpu_type: str = "any"):
     @app.function(
         gpu=gpu_type,
         timeout=3600,  # 1 hour timeout for tests
-        secrets=[modal.Secret.from_name("huggingface-secret", required=False)],
-        mounts=[code_mount],
+        secrets=[modal.Secret.from_name("huggingface-secret")],
     )
     def run_tests(test_filter: str = "gpu"):
         """Run pytest on GPU tests with optional filter."""
@@ -44,7 +37,7 @@ def create_gpu_test_function(gpu_type: str = "any"):
         cmd = [
             "pytest",
             "-v",
-            "/root/llamax/llamax",
+            "llamax",
             "-k",
             test_filter,
             "--tb=short",
@@ -54,7 +47,6 @@ def create_gpu_test_function(gpu_type: str = "any"):
         result = subprocess.run(
             cmd,
             check=False,
-            cwd="/root/llamax",
             capture_output=True,
             text=True,
         )
@@ -77,8 +69,7 @@ def create_gpu_test_function(gpu_type: str = "any"):
 @app.function(
     gpu="any",
     timeout=3600,
-    secrets=[modal.Secret.from_name("huggingface-secret", required=False)],
-    mounts=[code_mount],
+    secrets=[modal.Secret.from_name("huggingface-secret")],
 )
 def run_gpu_tests():
     """Run pytest on all tests with 'gpu' in the name (backward compatible)."""
@@ -88,13 +79,12 @@ def run_gpu_tests():
         [
             "pytest",
             "-v",
-            "/root/llamax/llamax",
+            "llamax",
             "-k",
             "gpu",
             "--tb=short",
         ],
         check=False,
-        cwd="/root/llamax",
         capture_output=True,
         text=True,
     )
