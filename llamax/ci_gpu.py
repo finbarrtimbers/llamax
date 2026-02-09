@@ -15,6 +15,7 @@ image = (
         extras=["dev"],
     )
     .add_local_python_source("llamax", str(project_root / "llamax"))
+    .run_commands("cd /root && uv pip install -e .")
     .env({"JAX_ENABLE_X64": "True"})
 )
 
