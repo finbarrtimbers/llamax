@@ -30,4 +30,4 @@ jobs:
         MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
         MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
       run: |
-        uv run modal run llamax.ci_gpu
+        uv run modal run -m llamax.ci_gpu
