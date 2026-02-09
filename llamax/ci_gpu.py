@@ -27,7 +27,6 @@ def create_gpu_test_function(gpu_type: str = "any"):
     @app.function(
         gpu=gpu_type,
         timeout=3600,  # 1 hour timeout for tests
-        secrets=[modal.Secret.from_name("huggingface-secret")],
     )
     def run_tests(test_filter: str = "gpu"):
         """Run pytest on GPU tests with optional filter."""
@@ -69,7 +68,6 @@ def create_gpu_test_function(gpu_type: str = "any"):
 @app.function(
     gpu="any",
     timeout=3600,
-    secrets=[modal.Secret.from_name("huggingface-secret")],
 )
 def run_gpu_tests():
     """Run pytest on all tests with 'gpu' in the name (backward compatible)."""
