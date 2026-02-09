@@ -3,14 +3,7 @@ from typing import Optional
 import jax.numpy as jnp
 from flax import struct
 
-from llamax.deepspeed_sparse_attention import (
-    BigBirdSparsityConfig,
-    BSLongformerSparsityConfig,
-    DenseSparsityConfig,
-    FixedSparsityConfig,
-    SparseAttention,
-    sparse_attention,
-)
+from llamax.nsa import NativeSparseAttention, NSAConfig, nsa_attention
 
 
 @struct.dataclass
