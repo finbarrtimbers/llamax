@@ -1,7 +1,7 @@
 ---
 name: fetch-action-logs
 description: Fetch and display logs for a GitHub Actions run. Use when the user asks to get, check, or view CI logs for a GitHub Actions run.
-allowed-tools: Bash(curl*), Bash(unzip*), Bash(gh run list*), Bash(gh repo view*)
+allowed-tools: Bash(curl*), Bash(rm -rf /tmp/gh_logs*), Bash(unzip*), Bash(gh run list*), Bash(gh repo view*)
 ---
 
 # Fetch GitHub Actions Run Logs
