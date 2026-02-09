@@ -72,6 +72,29 @@ def create_gpu_test_function(gpu_type: str = "any"):
 def run_gpu_tests():
     """Run pytest on all tests with 'gpu' in the name (backward compatible)."""
     import subprocess
+    import sys
+
+    # Print debugging information
+    print("=== Modal GPU Test Environment ===")
+    print(f"Python version: {sys.version}")
+    print(f"Python executable: {sys.executable}")
+
+    # Check if pytest is available
+    try:
+        import pytest
+        print(f"pytest version: {pytest.__version__}")
+    except ImportError as e:
+        print(f"ERROR: pytest not found: {e}")
+        return 1
+
+    # Check if jax is available
+    try:
+        import jax
+        print(f"jax version: {jax.__version__}")
+        print(f"jax devices: {jax.devices()}")
+    except ImportError as e:
+        print(f"ERROR: jax not found: {e}")
+        return 1
 
     result = subprocess.run(
         [
@@ -87,11 +110,14 @@ def run_gpu_tests():
         text=True,
     )
 
+    print("\n=== Pytest Output ===")
     print(result.stdout)
     if result.stderr:
+        print("\n=== Pytest Errors ===")
         print(result.stderr)
 
     if result.returncode != 0:
+        print(f"\n=== Test failed with exit code {result.returncode} ===")
         raise SystemExit(result.returncode)
 
     return result.returncode
