@@ -44,8 +44,8 @@ echo "Running GPU tests on Modal..."
 echo "GPU Type: $GPU_TYPE"
 if [ -n "$TEST_FILTER" ]; then
     echo "Test Filter: $TEST_FILTER"
-    uv run modal run llamax.ci_gpu::main --gpu-type "$GPU_TYPE" --filter "$TEST_FILTER"
+    uv run modal run -m llamax.ci_gpu --gpu-type "$GPU_TYPE" --filter "$TEST_FILTER"
 else
     echo "Test Filter: all GPU tests"
-    uv run modal run llamax.ci_gpu::main --gpu-type "$GPU_TYPE"
+    uv run modal run -m llamax.ci_gpu --gpu-type "$GPU_TYPE"
 fi
